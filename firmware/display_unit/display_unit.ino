@@ -1,20 +1,20 @@
-// 채점 화면 장치 — ESP32-S3 + 0.96인치 160×80 화면 + 단추 2개(◀ ▶)
+// 채점 화면 장치 — GNPE ESP32-S3-0.96 MINI(C 플러그 동글, 0.96인치 160×80 ST7789)
 //
-// 대표 결정(2026-11-19): 전지 직결 + 깊은 잠 / 흰색·녹색만(녹색은 정답만) / 첫 화면부터 5×3 바둑판
-//   / 계산 문항은 정답+풀이식 / 해설은 기본 꺼짐(▶ 1초로 켜고 끔)
+// 대표 결정: 흰색·녹색만(녹색은 정답만) / 첫 화면부터 5×3 바둑판 / 계산 문항은 정답+풀이식 / 해설은 기본 꺼짐
+// 2026-11-20 확정: 쪽 넘기기는 카메라 장치의 ◀▶ 단추로 원격(이 장치엔 단추를 달지 않음)
 //
-// 흐름
-//   깊은 잠 → 3초마다 잠깐(0.06초) 깨어 카메라 장치의 「새 결과」 신호를 들음 → 없으면 다시 잠
-//   → 있으면 조각을 다 받고 「받음」 답장 → 화면 켜고 바둑판 → 단추로 넘기기 → 30초 손 안 대면 잠
-//   단추로 깨우면 마지막 결과를 다시 보여 줌. 카메라 채널이 바뀌면 1~13 채널을 훑어 다시 찾음.
+// 흐름(늘 켜 둠 — 보조배터리·휴대폰 C 단자에 꽂아 씀)
+//   무선 채널 1번(GL_CHANNEL)을 계속 들음 → 결과 조각을 다 받으면 「받음」 답장 → 바둑판
+//   → 카메라 ◀▶ 신호로 쪽 넘김 → 1분 동안 아무 신호 없으면 화면 불만 끔(신호 오면 다시 켬)
+//   깊은 잠을 쓰지 않는 이유: 잠들면 원격 넘기기가 늦고, 전류가 너무 적으면 보조배터리가 저절로 꺼짐.
 //
-// 보드 설정(아두이노): 「ESP32S3 Dev Module」, PSRAM 은 보드에 맞게
+// 보드 설정(아두이노): 「ESP32S3 Dev Module」, USB CDC On Boot: Enabled(C 플러그로 바로 올림),
+//   Flash Size: 보드 표기대로(보통 16MB 또는 4MB), PSRAM: Disabled, 파티션: SPIFFS 포함 아무거나
 // 필요한 꾸러미: Adafruit GFX, Adafruit ST7735 and ST7789, U8g2_for_Adafruit_GFX
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
-#include <esp_sleep.h>
 #include <LittleFS.h>
 #include <SPI.h>
 #include <Adafruit_GFX.h>
@@ -32,17 +32,16 @@
 #if TFT_DRIVER_ST7735
 Adafruit_ST7735 tft(PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_RST);
 #else
-Adafruit_ST7789 tft(PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_RST);
+// 0.96인치 ST7789 는 화면 위치(오프셋)를 직접 맞춰야 해서 조금 고친 판을 씀
+class St7789Mini : public Adafruit_ST7789 {
+ public:
+  using Adafruit_ST7789::Adafruit_ST7789;
+  void offsets(int8_t c, int8_t r) { _colstart = _colstart2 = c; _rowstart = _rowstart2 = r; }
+};
+St7789Mini tft(PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_RST);
 #endif
 U8G2_FOR_ADAFRUIT_GFX u8;
 static const int W = 160, H = 80;
-
-// ── 깊은 잠을 건너 기억 ──
-RTC_DATA_ATTR uint8_t rtcChannel = 1;
-RTC_DATA_ATTR uint16_t rtcLastId = 0;
-RTC_DATA_ATTR uint32_t rtcWakes = 0;
-RTC_DATA_ATTR bool rtcNewStudent = true;
-RTC_DATA_ATTR uint32_t rtcLastResultAt = 0;   // 깨어난 횟수 기준(약 3초 단위)
 
 // ───────────────────────── 결과 해석 ─────────────────────────
 struct Item {
@@ -236,49 +235,53 @@ static void render() {
 }
 
 // ───────────────────────── 화면 켜고 끄기 ─────────────────────────
-static bool screenOn = false;
-static void screenStart() {
-  if (screenOn) return;
+static bool lightOn = false;
+static void screenInit() {
   SPI.begin(PIN_TFT_SCLK, -1, PIN_TFT_MOSI, PIN_TFT_CS);
 #if TFT_DRIVER_ST7735
   tft.initR(INITR_MINI160x80_PLUGIN);
 #else
   tft.init(80, 160);
+  tft.offsets(TFT_COL_OFS, TFT_ROW_OFS);
+  tft.invertDisplay(TFT_INVERT);
 #endif
   tft.setRotation(TFT_ROTATION);
   u8.begin(tft);
   u8.setFontMode(1);
   pinMode(PIN_TFT_BL, OUTPUT);
-  digitalWrite(PIN_TFT_BL, HIGH);
-  screenOn = true;
 }
 
-static void screenStop() {
-  if (!screenOn) return;
-  digitalWrite(PIN_TFT_BL, LOW);
-  tft.enableSleep(true);   // 화면 칩 절전
-  screenOn = false;
+static void light(bool on) {
+  if (on == lightOn) return;
+  if (on) tft.enableSleep(false);
+  digitalWrite(PIN_TFT_BL, on ? TFT_BL_ON : !TFT_BL_ON);
+  if (!on) tft.enableSleep(true);   // 화면 칩 절전
+  lightOn = on;
 }
 
 // ───────────────────────── 무선 받기 ─────────────────────────
-static volatile bool heard = false;
+// 받는 쪽(무선 처리 흐름)에서는 표시만 해 두고, 그리기는 loop() 에서
 static volatile uint16_t rxId = 0;
 static volatile uint8_t rxTotal = 0;
-static char rxBuf[GL_PAYLOAD * 40];
+static char rxBuf[GL_PAYLOAD * 40 + 1];
 static volatile uint64_t rxMask = 0;
 static volatile bool newStudentFlag = false;
-static String pendingStatus;
+static char statusBuf[GL_PAYLOAD + 1];
 static volatile bool statusFlag = false;
+static volatile char pageCmd = 0;
+static volatile uint16_t pageId = 0, lastPageId = 0;
+static volatile int powerFlag = -1;     // 1 켬, 0 끔
+static volatile uint16_t lastId = 0xFFFF;   // 마지막으로 받은 결과 번호
+static volatile bool reAck = false;
 
 static void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
   if (len < (int)offsetof(GlPacket, payload)) return;
   const GlPacket* p = (const GlPacket*)data;
   if (p->magic != GL_MAGIC || p->group != GROUP_CODE) return;
-  heard = true;
   switch (p->type) {
     case GL_READY:
     case GL_CHUNK:
-      if (p->id == rtcLastId) break;               // 이미 받은 결과
+      if (p->id == lastId) { reAck = true; break; }   // 이미 받은 결과 → 답장만 다시(loop 에서)
       if (p->id != rxId) { rxId = p->id; rxMask = 0; memset(rxBuf, 0, sizeof(rxBuf)); }
       rxTotal = p->total;
       if (p->type == GL_CHUNK && p->part < 40) {
@@ -286,23 +289,31 @@ static void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len
         rxMask |= (1ULL << p->part);
       }
       break;
-    case GL_STATUS:
-      pendingStatus = String(p->payload).substring(0, p->len);
+    case GL_STATUS: {
+      int n = min((int)p->len, GL_PAYLOAD);
+      memcpy(statusBuf, p->payload, n); statusBuf[n] = 0;
       statusFlag = true;
       break;
-    case GL_NEWSTUDENT:
-      newStudentFlag = true;
+    }
+    case GL_NEWSTUDENT: newStudentFlag = true; break;
+    case GL_PAGE:
+      if (p->len >= 1) { pageId = p->id; pageCmd = p->payload[0]; }
+      break;
+    case GL_POWER:
+      if (p->len >= 1) powerFlag = p->payload[0] == '1' ? 1 : 0;
       break;
   }
 }
 
 static bool rxComplete() { return rxTotal && rxMask == ((rxTotal >= 64) ? ~0ULL : ((1ULL << rxTotal) - 1)); }
 
-static void radioStart(uint8_t ch) {
+static void radioStart() {
   WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
   esp_wifi_set_promiscuous(true);
-  esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
+  esp_wifi_set_channel(GL_CHANNEL, WIFI_SECOND_CHAN_NONE);
   esp_wifi_set_promiscuous(false);
+  esp_wifi_set_ps(WIFI_PS_NONE);   // 늘 들음(놓치지 않게)
   esp_now_init();
   esp_now_register_recv_cb(onRecv);
   esp_now_peer_info_t peer = {};
@@ -311,20 +322,14 @@ static void radioStart(uint8_t ch) {
   esp_now_add_peer(&peer);
 }
 
-static void setChannel(uint8_t ch) {
-  esp_wifi_set_promiscuous(true);
-  esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
-  esp_wifi_set_promiscuous(false);
-}
-
-static void sendAck(uint16_t id) {
+static void sendAck(uint16_t id, int times = 5) {
   GlPacket p = {};
   p.magic = GL_MAGIC; p.group = GROUP_CODE; p.type = GL_ACK; p.id = id; p.total = 1;
   static const uint8_t bc[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-  for (int i = 0; i < 5; i++) { esp_now_send(bc, (const uint8_t*)&p, offsetof(GlPacket, payload)); delay(10); }
+  for (int i = 0; i < times; i++) { esp_now_send(bc, (const uint8_t*)&p, offsetof(GlPacket, payload)); delay(5); }
 }
 
-// ───────────────────────── 저장 ─────────────────────────
+// ───────────────────────── 저장(꺼졌다 켜져도 마지막 학생 결과 유지) ─────────────────────────
 static void saveText(const char* path, const String& s) { File f = LittleFS.open(path, "w"); if (f) { f.print(s); f.close(); } }
 static String loadText(const char* path) { File f = LittleFS.open(path, "r"); String s; if (f) { s = f.readString(); f.close(); } return s; }
 
@@ -341,124 +346,101 @@ static void loadAll() {   // 지금 학생의 결과 묶음(여러 장)을 다�
   }
 }
 
+static bool newStudent = true;
+static uint32_t lastResultAt = 0;
+
 static void acceptResult(const String& text) {
   // 새 학생 표시가 있었거나 10분 넘게 지났으면 새 묶음, 아니면 이어 붙임(여러 장 합치기)
-  bool fresh = rtcNewStudent || (rtcWakes - rtcLastResultAt) * LISTEN_EVERY_S > 600;
+  bool fresh = newStudent || millis() - lastResultAt > MERGE_MS;
   String all = fresh ? String() : loadText("/batch.txt");
   if (all.length()) all += "\n\x1e\n";
   all += text;
   saveText("/batch.txt", all);
-  rtcNewStudent = false;
-  rtcLastResultAt = rtcWakes;
+  newStudent = false;
+  lastResultAt = millis();
   statusMsg = "";
   loadAll();
   cur = 0;
   buildPages();
 }
 
-// ───────────────────────── 잠들기 ─────────────────────────
-static void goSleep() {
-  screenStop();
-  esp_now_deinit();
-  WiFi.mode(WIFI_OFF);
-  uint64_t mask = (1ULL << PIN_BTN_PREV) | (1ULL << PIN_BTN_NEXT);
-  esp_sleep_enable_ext1_wakeup(mask, ESP_EXT1_WAKEUP_ANY_LOW);
-  esp_sleep_enable_timer_wakeup((uint64_t)LISTEN_EVERY_S * 1000000ULL);
-  esp_deep_sleep_start();
+// ───────────────────────── 쪽 넘기기 ─────────────────────────
+static uint32_t lastActive = 0;
+
+static void wake() { light(true); lastActive = millis(); }
+
+static void doCmd(char cmd) {
+  if (nPages == 0) buildPages();
+  switch (cmd) {
+    case GL_CMD_PREV:  cur = (cur - 1 + nPages) % nPages; break;
+    case GL_CMD_NEXT:  cur = (cur + 1) % nPages; break;
+    case GL_CMD_FIRST: cur = 0; break;
+    case GL_CMD_NOTES: notes = !notes; buildPages(); break;
+  }
+  // 화면 불이 꺼져 있었으면 첫 누름은 「켜기」만(어디까지 봤는지 보이게)
+  bool wasOff = !lightOn;
+  wake();
+  if (wasOff && (cmd == GL_CMD_PREV || cmd == GL_CMD_NEXT)) cur = (cmd == GL_CMD_NEXT) ? (cur - 1 + nPages) % nPages : (cur + 1) % nPages;
+  render();
 }
 
-// ───────────────────────── 들어 보기(짧게) ─────────────────────────
-// 새 결과 신호가 들리면 끝까지 받고 true
-static bool listenOnce() {
-  rtcWakes++;
-  bool scan = (rtcWakes % SCAN_EVERY) == 0;
-  radioStart(rtcChannel);
+static void localButton() {
+  if (PIN_BTN_LOCAL < 0 || digitalRead(PIN_BTN_LOCAL) != LOW) return;
   uint32_t t0 = millis();
-  while (millis() - t0 < LISTEN_MS && !heard) delay(2);
-  if (!heard && scan) {   // 카메라 채널이 바뀌었을 수 있음 → 1~13 훑기
-    for (uint8_t ch = 1; ch <= 13 && !heard; ch++) {
-      setChannel(ch);
-      uint32_t t1 = millis();
-      while (millis() - t1 < 35 && !heard) delay(2);
-      if (heard) rtcChannel = ch;
-    }
-    if (!heard) setChannel(rtcChannel);
-  }
-  if (!heard) return false;
-  // 들렸으면 결과 조각을 최대 8초 기다림
-  uint32_t t2 = millis();
-  while (millis() - t2 < 8000) {
-    if (rxComplete()) {
-      String text = String(rxBuf).substring(0, min((int)strlen(rxBuf), rxTotal * GL_PAYLOAD));
-      rtcLastId = rxId;
-      sendAck(rxId);
-      acceptResult(text);
-      return true;
-    }
-    if (statusFlag && !rxTotal) break;
-    delay(5);
-  }
-  return false;
-}
-
-// ───────────────────────── 단추 ─────────────────────────
-static uint32_t lastTouch = 0;
-
-static int pressLen(int pin) {   // 누른 시간(ms). 5초 넘으면 바로 반환
-  uint32_t t0 = millis();
-  while (digitalRead(pin) == LOW && millis() - t0 < OFF_MS) delay(10);
-  return millis() - t0;
-}
-
-static void handleButtons() {
-  if (digitalRead(PIN_BTN_PREV) == LOW) {
-    int ms = pressLen(PIN_BTN_PREV);
-    if (ms >= OFF_MS) { tft.fillScreen(C_BG); wrapDraw("끄는 중", 40, 46, 120, 16, C_FG, 1); delay(600); goSleep(); }
-    if (ms >= LONG_MS) cur = 0; else cur = (cur - 1 + nPages) % nPages;
-    render(); lastTouch = millis();
-  }
-  if (digitalRead(PIN_BTN_NEXT) == LOW) {
-    int ms = pressLen(PIN_BTN_NEXT);
-    if (ms >= LONG_MS) { notes = !notes; buildPages(); } else cur = (cur + 1) % nPages;
-    render(); lastTouch = millis();
-  }
+  while (digitalRead(PIN_BTN_LOCAL) == LOW && millis() - t0 < 3000) delay(10);
+  doCmd(millis() - t0 >= LONG_MS ? GL_CMD_FIRST : GL_CMD_NEXT);
 }
 
 // ───────────────────────── 본 흐름 ─────────────────────────
 void setup() {
-  pinMode(PIN_BTN_PREV, INPUT_PULLUP);
-  pinMode(PIN_BTN_NEXT, INPUT_PULLUP);
+  if (PIN_BTN_LOCAL >= 0) pinMode(PIN_BTN_LOCAL, INPUT_PULLUP);
   LittleFS.begin(true);
-  esp_sleep_wakeup_cause_t why = esp_sleep_get_wakeup_cause();
-
-  if (why == ESP_SLEEP_WAKEUP_TIMER) {
-    if (!listenOnce()) {
-      if (statusFlag) { statusMsg = pendingStatus; nItems = 0; screenStart(); buildPages(); render(); lastTouch = millis(); return; }
-      if (newStudentFlag) rtcNewStudent = true;
-      goSleep();
-    }
-    screenStart(); render(); lastTouch = millis();
-    return;
-  }
-  // 단추로 깨움 또는 처음 켬: 마지막 결과 다시 보기
-  radioStart(rtcChannel);
+  screenInit();
+  radioStart();
   loadAll();
-  if (nItems == 0) statusMsg = why == ESP_SLEEP_WAKEUP_UNDEFINED ? "준비됨 · 촬영 단추를 누르세요" : "결과 없음";
+  if (nItems == 0) statusMsg = "준비됨 · 촬영 단추를 누르세요";
   buildPages();
-  screenStart();
+  wake();
   render();
-  lastTouch = millis();
 }
 
 void loop() {
-  handleButtons();
-  // 켜져 있는 동안 새 결과·상태도 바로 받음
-  if (rxComplete() && rxId != rtcLastId) {
+  // 새 결과
+  if (rxComplete() && rxId != lastId) {
+    uint16_t id = rxId;
     String text = String(rxBuf).substring(0, min((int)strlen(rxBuf), rxTotal * GL_PAYLOAD));
-    rtcLastId = rxId; sendAck(rxId); acceptResult(text); render(); lastTouch = millis();
+    lastId = id;
+    rxTotal = 0; rxMask = 0;
+    sendAck(id);
+    acceptResult(text);
+    wake(); render();
   }
-  if (statusFlag) { statusFlag = false; statusMsg = pendingStatus; if (nItems == 0) { buildPages(); render(); } }
-  if (newStudentFlag) { newStudentFlag = false; rtcNewStudent = true; }
-  if (millis() - lastTouch > IDLE_SLEEP_MS) goSleep();
-  delay(10);
+  // 카메라가 「받음」을 못 듣고 같은 결과를 다시 보내면 답장만 다시(0.2초에 한 번까지)
+  static uint32_t lastReAck = 0;
+  if (reAck && millis() - lastReAck > 200) { reAck = false; lastReAck = millis(); sendAck(lastId, 2); }
+
+  // 쪽 넘기기(같은 번호 반복은 한 번만 처리, 답장은 매번)
+  if (pageCmd) {
+    char cmd = pageCmd; uint16_t id = pageId; pageCmd = 0;
+    sendAck(id, 2);
+    if (id != lastPageId) { lastPageId = id; doCmd(cmd); }
+  }
+  // 상태 글(채점 중·오류 등)
+  if (statusFlag) {
+    statusFlag = false;
+    statusMsg = String(statusBuf);
+    // 상태 글을 화면 가득 보여 줌(채점 중·오류·켜짐 등). ◀▶ 를 누르면 지난 결과로 돌아감
+    if (nItems == 0) buildPages();
+    tft.fillScreen(C_BG);
+    drawMsg();
+    wake();
+  }
+  if (newStudentFlag) { newStudentFlag = false; newStudent = true; }
+  if (powerFlag >= 0) {
+    int on = powerFlag; powerFlag = -1;
+    if (on) { wake(); render(); } else { light(false); }
+  }
+  localButton();
+  if (lightOn && millis() - lastActive > DIM_MS) light(false);
+  delay(5);
 }

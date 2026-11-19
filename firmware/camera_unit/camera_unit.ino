@@ -1,13 +1,18 @@
-// 채점 카메라 장치 — XIAO ESP32-S3 Sense + OV5640 자동 초점(또는 OV3660)
+// 채점 카메라 장치 — ESP32-S3-CAM(Diymore N16R8, OV3660) / XIAO ESP32-S3 Sense 도 됨(config.h BOARD)
 //
-// 흐름(대표 결정 2026-11-19: 전지 직결 + 깊은 잠)
+// 단추 4개(대표 결정 2026-11-20): 촬영 · 전원 · ◀ · ▶ — ◀▶ 는 화면 장치의 쪽을 원격으로 넘김
+// 전원: 리튬 전지 504270 → TP4056(충전) → 슬라이드 스위치 → MT3608(5.1V) → 보드 5V
+//
+// 흐름(대표 결정 2026-11-19: 깊은 잠)
 //   깊은 잠 → 촬영 단추로 깨어남 → (길게 누름이면 「새 학생」만 알리고 다시 잠)
 //   → 카메라 켜고 초점·촬영 → 카메라 끔 → 사진을 내부 저장소에 먼저 보관
 //   → 와이파이(도시락 → 핫스팟, 지난번 채널로 빠른 재접속) → 중계기로 보냄(최대 170초 대기)
 //   → 결과를 화면 장치로 무선 전송(받았다는 답이 올 때까지 반복) → 보관 사진 지움 → 깊은 잠
 //   못 보낸 사진은 남겨 두고 5분마다 스스로 깨어 다시 보냄. 다시 켜져도(전압 떨어짐 등) 이어서 보냄.
 //
-// 보드 설정(아두이노): 「XIAO_ESP32S3」, PSRAM: OPI PSRAM, 파티션: 8M with spiffs(3MB APP/1.5MB SPIFFS)
+// 보드 설정(아두이노): 「ESP32S3 Dev Module」, Flash Size: 16MB, PSRAM: OPI PSRAM,
+//   파티션: 16M Flash (3MB APP/9.9MB FATFS) 또는 아무 SPIFFS 포함 파티션, USB CDC On Boot: Disabled(CH340 쪽 C 단자로 올림)
+//   (XIAO 면 「XIAO_ESP32S3」, 파티션: 8M with spiffs)
 // 필요한 꾸러미: (OV5640 자동 초점을 쓸 때) 「ESP32_OV5640_AF」 — 없으면 USE_OV5640_AF 를 0 으로
 #define USE_OV5640_AF 1
 
@@ -39,6 +44,8 @@ RTC_DATA_ATTR uint8_t rtcBssid[6] = {0};
 RTC_DATA_ATTR int8_t rtcWifiIdx = -1;      // 지난번 붙은 와이파이 순번
 RTC_DATA_ATTR uint16_t rtcResultId = 0;    // 결과 번호
 RTC_DATA_ATTR uint8_t rtcBootFails = 0;    // 연속 비정상 재시작 횟수(3번이면 안전 모드)
+RTC_DATA_ATTR bool rtcOff = false;         // 전원 단추로 끈 상태(전원 단추로만 깨어남)
+RTC_DATA_ATTR uint16_t rtcPageSeq = 0;     // 쪽 넘기기 신호 번호
 
 struct WifiCred { const char* ssid; const char* pass; };
 static const WifiCred WIFI_DEFAULT[] = WIFI_LIST;
@@ -71,12 +78,21 @@ static void blink(int n, int ms = 120) {
 static void goSleep(bool retryLater) {
   led(false);
   esp_now_deinit();
+  linkReady = false;
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
-  rtc_gpio_pullup_en((gpio_num_t)PIN_SHUTTER);
-  rtc_gpio_pulldown_dis((gpio_num_t)PIN_SHUTTER);
-  esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_SHUTTER, 0);   // 단추 누르면(접지) 깨어남
-  if (retryLater) esp_sleep_enable_timer_wakeup((uint64_t)RETRY_SLEEP_S * 1000000ULL);
+  // 깨우는 단추: 켜져 있으면 4개 모두, 꺼져 있으면 전원 단추만
+  const int pins[] = { PIN_SHUTTER, PIN_POWER, PIN_PREV, PIN_NEXT };
+  uint64_t mask = 0;
+  for (int pin : pins) {
+    if (rtcOff && pin != PIN_POWER) continue;
+    rtc_gpio_pullup_en((gpio_num_t)pin);
+    rtc_gpio_pulldown_dis((gpio_num_t)pin);
+    mask |= 1ULL << pin;
+  }
+  esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);   // 잠자는 동안 풀업 유지
+  esp_sleep_enable_ext1_wakeup(mask, ESP_EXT1_WAKEUP_ANY_LOW);      // 아무 단추나 누르면(접지) 깨어남
+  if (retryLater && !rtcOff) esp_sleep_enable_timer_wakeup((uint64_t)RETRY_SLEEP_S * 1000000ULL);
   rtcBootFails = 0;   // 정상적으로 잠들면 연속 실패 기록 지움
   esp_deep_sleep_start();
 }
@@ -89,12 +105,22 @@ static void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len
   if (p->type == GL_ACK) { ackId = p->id; gotAck = true; }
 }
 
+// 화면 장치와 말할 준비: 와이파이가 붙어 있으면 잠깐 끊고 고정 채널(GL_CHANNEL)로 옮김
+static bool linkReady = false;
+static void linkChannel() {
+  if (WiFi.getMode() == WIFI_AP_STA) return;   // 설정 모드는 공유기를 이미 GL_CHANNEL 에 띄움
+  if (WiFi.isConnected()) { WiFi.disconnect(false, false); delay(30); }
+  esp_wifi_set_promiscuous(true);
+  esp_wifi_set_channel(GL_CHANNEL, WIFI_SECOND_CHAN_NONE);
+  esp_wifi_set_promiscuous(false);
+}
+
 static bool linkStart() {
   if (WiFi.getMode() == WIFI_OFF) WiFi.mode(WIFI_STA);
-  if (!WiFi.isConnected()) {   // 와이파이 없이 보낼 때는 지난번 채널(없으면 1)
-    esp_wifi_set_channel(rtcChannel ? rtcChannel : 1, WIFI_SECOND_CHAN_NONE);
-  }
+  linkChannel();
+  if (linkReady) return true;
   if (esp_now_init() != ESP_OK) return false;
+  linkReady = true;
   esp_now_register_recv_cb(onRecv);
   esp_now_peer_info_t peer = {};
   memset(peer.peer_addr, 0xFF, 6);   // 방송(묶음 번호로 구별)
@@ -115,13 +141,16 @@ static void sendPacket(uint8_t type, uint16_t id, uint8_t part, uint8_t total, c
 
 // 상태는 화면 장치가 3초마다 잠깐 깨어 듣기 때문에 3.5초 동안 촘촘히 반복
 static void sendStatus(const char* msg) {
+  linkStart();
   uint32_t t0 = millis();
   while (millis() - t0 < 3500) { sendPacket(GL_STATUS, 0, 0, 1, msg, strlen(msg)); delay(25); }
 }
 
 // 결과 글을 조각내 보내고, 화면 장치가 「다 받음」 할 때까지 반복(화면 장치는 2초마다 잠깐 깨어 들음)
 static bool sendResult(const String& text) {
-  uint16_t id = ++rtcResultId;
+  linkStart();
+  uint16_t id = (++rtcResultId) & 0x7FFF;   // 결과 번호는 0~32767(위쪽 절반은 쪽 넘기기 번호)
+  rtcResultId = id;
   size_t n = text.length();
   uint8_t total = (uint8_t)((n + GL_PAYLOAD - 1) / GL_PAYLOAD);
   if (total == 0) total = 1;
@@ -270,7 +299,7 @@ static int postPhoto(const String& path, String& out) {
 // 와이파이 도시락 이름이 바뀌어도, 새 핫스팟이어도 장치 프로그램을 다시 올릴 필요가 없다. 5분 지나면 저절로 끝.
 static void setupMode() {
   WiFi.mode(WIFI_AP_STA);   // 설정 화면(공유기) + 화면 장치 무선 알림을 함께
-  WiFi.softAP("채점장치-설정", "12345678", rtcChannel ? rtcChannel : 1);
+  WiFi.softAP("채점장치-설정", "12345678", GL_CHANNEL);
   linkStart();
   sendStatus("설정 모드 · 휴대폰으로 「채점장치-설정」 접속 → 192.168.4.1");
   WebServer web(80);
@@ -309,11 +338,73 @@ static void setupMode() {
   goSleep(false);
 }
 
+// ───────────────────────── 쪽 넘기기·전원 ─────────────────────────
+static int pressLen(int pin, uint32_t maxMs) {   // 지금부터 손 뗄 때까지(ms)
+  uint32_t t0 = millis();
+  while (digitalRead(pin) == LOW && millis() - t0 < maxMs) delay(10);
+  return millis() - t0;
+}
+
+// 화면 장치에 쪽 넘기기 신호. 「받음」이 올 때까지 최대 0.6초 반복
+static bool sendPage(char cmd) {
+  linkStart();
+  uint16_t id = 0x8000 | ((++rtcPageSeq) & 0x7FFF);
+  gotAck = false;
+  uint32_t t0 = millis();
+  while (millis() - t0 < 600) {
+    sendPacket(GL_PAGE, id, 0, 1, &cmd, 1);
+    delay(15);
+    if (gotAck && ackId == id) return true;
+  }
+  return false;
+}
+
+static void sendPower(bool on) {
+  linkStart();
+  char c = on ? '1' : '0';
+  for (int i = 0; i < 20; i++) { sendPacket(GL_POWER, 0, 0, 1, &c, 1); delay(15); }
+}
+
+// ◀▶ 로 깨어났을 때: 첫 누름을 처리하고 5초 동안 연달아 누르는 것을 받음(와이파이는 켜지 않음)
+static void pageMode(int firstPin) {
+  int pin = firstPin;
+  uint32_t last = millis();
+  while (true) {
+    if (pin >= 0) {
+      int ms = pressLen(pin, PAGE_LONG_MS);
+      bool lng = ms >= PAGE_LONG_MS;
+      char cmd = pin == PIN_PREV ? (lng ? GL_CMD_FIRST : GL_CMD_PREV) : (lng ? GL_CMD_NOTES : GL_CMD_NEXT);
+      sendPage(cmd);
+      while (digitalRead(pin) == LOW) delay(10);   // 손 뗄 때까지
+      delay(30);                                   // 떨림 막기
+      last = millis();
+      pin = -1;
+    }
+    if (digitalRead(PIN_PREV) == LOW) pin = PIN_PREV;
+    else if (digitalRead(PIN_NEXT) == LOW) pin = PIN_NEXT;
+    else if (digitalRead(PIN_SHUTTER) == LOW || digitalRead(PIN_POWER) == LOW) return;   // 다른 단추면 본 흐름으로
+    else if (millis() - last > PAGE_STAY_MS) return;
+    delay(10);
+  }
+}
+
+static int queueCount() {
+  File d = LittleFS.open("/q");
+  int n = 0;
+  for (File f = d.openNextFile(); f; f = d.openNextFile()) n++;
+  return n;
+}
+
 // ───────────────────────── 본 흐름 ─────────────────────────
 void setup() {
   if (PIN_LED >= 0) pinMode(PIN_LED, OUTPUT);
   led(false);
+  // 깊은 잠 동안 RTC 쪽으로 넘겨 둔 단추 단자를 일반 단자로 되돌림
+  for (int pin : { PIN_SHUTTER, PIN_POWER, PIN_PREV, PIN_NEXT }) rtc_gpio_deinit((gpio_num_t)pin);
   pinMode(PIN_SHUTTER, INPUT_PULLUP);
+  pinMode(PIN_POWER, INPUT_PULLUP);
+  pinMode(PIN_PREV, INPUT_PULLUP);
+  pinMode(PIN_NEXT, INPUT_PULLUP);
   // 감시 타이머: 200초 넘게 멈추면 자동 재시작(중계기 최대 대기 170초 + 여유)
   esp_task_wdt_config_t wdt = { .timeout_ms = 200000, .idle_core_mask = 0, .trigger_panic = true };
   esp_task_wdt_reconfigure(&wdt);
@@ -322,7 +413,6 @@ void setup() {
   esp_reset_reason_t why = esp_reset_reason();
   if (why == ESP_RST_BROWNOUT || why == ESP_RST_PANIC || why == ESP_RST_TASK_WDT || why == ESP_RST_WDT) {
     if (++rtcBootFails >= 3) {   // 안전 모드: 연속 실패 3번이면 알리고 길게 쉼
-      linkStart();
       sendStatus(why == ESP_RST_BROWNOUT ? GL_E_POWER : "E9 안전 모드 · 다시 켜 주세요");
       blink(10, 60);
       rtcBootFails = 0;
@@ -333,10 +423,58 @@ void setup() {
   loadWifiList();
   LittleFS.mkdir("/q");
 
-  bool byButton = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0 ||
-                  esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED;   // 처음 켤 때 포함
-  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0) {
-    // 길게 누름 = 새 학생(여러 장 합치기 끊기)
+  // 어느 단추로 깨어났나
+  esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+  int wokePin = -1;
+  if (cause == ESP_SLEEP_WAKEUP_EXT1) {
+    uint64_t st = esp_sleep_get_ext1_wakeup_status();
+    const int pins[] = { PIN_SHUTTER, PIN_POWER, PIN_PREV, PIN_NEXT };
+    for (int pin : pins) if (st & (1ULL << pin)) { wokePin = pin; break; }
+  }
+  if (cause == ESP_SLEEP_WAKEUP_UNDEFINED) {   // 슬라이드 스위치로 처음 켬
+    rtcOff = false;
+    sendPower(true);
+    sendStatus("준비됨 · 촬영 단추를 누르세요");
+  }
+
+  // 전원 단추
+  if (wokePin == PIN_POWER) {
+    int ms = pressLen(PIN_POWER, POWER_OFF_MS);
+    if (rtcOff) {                       // 꺼져 있었으면 켬
+      rtcOff = false;
+      blink(2, 80);
+      sendPower(true);
+      sendStatus("켜짐 · 촬영 단추를 누르세요");
+      goSleep(queueCount() > 0);
+    }
+    if (ms >= POWER_OFF_MS) {           // 1.5초 누름 = 끔
+      sendStatus("꺼짐");
+      sendPower(false);
+      blink(3, 60);
+      rtcOff = true;
+      while (digitalRead(PIN_POWER) == LOW) delay(10);   // 손 떼고 나서 잠(바로 다시 깨지 않게)
+      goSleep(false);
+    }
+    // 짧게 = 상태 보기
+    int n = queueCount();
+    String msg = "켜짐 · 대기 중";
+    if (n) msg = "켜짐 · 못 보낸 사진 " + String(n) + "장 · 다시 보냄";
+    sendStatus(msg.c_str());
+    if (!n) goSleep(false);
+    // 못 보낸 사진이 있으면 아래 본 흐름에서 바로 다시 보냄
+  }
+
+  if (rtcOff) goSleep(false);           // 꺼진 상태에서 다른 이유로 깨면 그냥 잠
+
+  // ◀ ▶ = 화면 장치 쪽 넘기기
+  if (wokePin == PIN_PREV || wokePin == PIN_NEXT) {
+    pageMode(wokePin);
+    if (digitalRead(PIN_SHUTTER) == LOW) wokePin = PIN_SHUTTER;   // 넘기다가 바로 촬영
+    else goSleep(queueCount() > 0);
+  }
+
+  if (wokePin == PIN_SHUTTER) {
+    // 길게 누름 = 새 학생(여러 장 합치기 끊기), 8초 = 와이파이 설정
     uint32_t t0 = millis();
     while (digitalRead(PIN_SHUTTER) == LOW && millis() - t0 < 9000) delay(10);
     if (millis() - t0 >= 8000) { blink(5, 60); setupMode(); }
@@ -344,15 +482,13 @@ void setup() {
       blink(2, 80);
       linkStart();
       for (int i = 0; i < 30; i++) { sendPacket(GL_NEWSTUDENT, 0, 0, 1, nullptr, 0); delay(30); }
-      goSleep(false);
+      sendStatus("새 학생 · 촬영하세요");
+      goSleep(queueCount() > 0);
     }
-  }
-
-  if (byButton && esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0) {
     led(true);
     String name = captureToQueue();
     led(false);
-    if (name == "") { linkStart(); sendStatus(GL_E_CAMERA); blink(3); goSleep(false); }
+    if (name == "") { sendStatus(GL_E_CAMERA); blink(3); goSleep(queueCount() > 0); }
     trimQueue();
     blink(1, 60);   // 찍힘
   }
@@ -364,17 +500,16 @@ void setup() {
   std::sort(queue.begin(), queue.end());
   if (queue.empty()) goSleep(false);
 
+  sendStatus(GL_S_SENDING);   // 와이파이 붙기 전에(고정 채널에서) 먼저 알림
   if (!wifiConnect()) {
-    linkStart();
     sendStatus(GL_E_WIFI);
     goSleep(true);   // 5분 뒤 다시
   }
-  linkStart();
-  sendStatus(GL_S_SENDING);
 
   bool left = false;
   for (auto& path : queue) {
     esp_task_wdt_reset();
+    if (!WiFi.isConnected() && !wifiConnect()) { left = true; sendStatus(GL_E_WIFI); break; }
     String text;
     int code = postPhoto(path, text);
     if (code == 200 && text.length() > 0) {
