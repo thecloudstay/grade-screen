@@ -20,5 +20,13 @@
     "claude-haiku-5-5",
     "claude-sonnet-5-5",
     "claude-opus-5-5"
-  ]
+  ],
+  "route": {
+    "first": "claude-haiku-5-5",
+    "escalate": "claude-sonnet-5-5",
+    "escalate_if": [
+      "어려움",
+      "낮음"
+    ]
+  }
 }

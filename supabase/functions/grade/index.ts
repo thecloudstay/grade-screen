@@ -1,6 +1,6 @@
 // 예비 중계(슈퍼베이스). 넷리파이가 3초 안에 응답하지 않으면 모듈이 여기로 보낸다.
 // _shared/core.mjs 는 배포할 때 relay/core.mjs 를 복사해 넣는다(깃허브 작업).
-import { checkToken, gradeImage, loadConfig, mediaOf, meta, record } from "../_shared/core.mjs";
+import { checkToken, gradeAuto, loadConfig, mediaOf, meta, record } from "../_shared/core.mjs";
 
 const env = (k: string) => Deno.env.get(k);
 
@@ -18,13 +18,13 @@ Deno.serve(async (req) => {
   const started = Date.now();
   try {
     const config = await loadConfig();
-    const { text, model } = await gradeImage({ img, media, apiKey: env("GRADE_ANTHROPIC_KEY") || env("ANTHROPIC_API_KEY"), config, prefer: req.headers.get("x-grade-model") || "" });
+    const { text, model, route } = await gradeAuto({ img, media, apiKey: env("GRADE_ANTHROPIC_KEY") || env("ANTHROPIC_API_KEY"), config, prefer: req.headers.get("x-grade-model") || "" });
     // 기록은 같은 프로젝트 안이라 서비스 열쇠로 바로 저장
     await record({
       url: env("SUPABASE_URL"), key: env("SUPABASE_SERVICE_ROLE_KEY"),
-      row: { device, relay: "supabase", model, ms: Date.now() - started, result: text, ...meta(text) },
+      row: { device, relay: "supabase", model: model + " · " + route, ms: Date.now() - started, result: text, ...meta(text) },
     });
-    return new Response(text + "\n", { headers: { "content-type": "text/plain; charset=utf-8", "x-grade-model": model } });
+    return new Response(text + "\n", { headers: { "content-type": "text/plain; charset=utf-8", "x-grade-model": model, "x-grade-route": encodeURIComponent(route) } });
   } catch (e) {
     return new Response("오류: " + ((e as Error)?.message || "알 수 없음") + "\n", {
       status: 502, headers: { "content-type": "text/plain; charset=utf-8" },

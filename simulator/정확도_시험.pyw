@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -123,7 +124,7 @@ def prepare(path):
         return buf.getvalue(), "image/jpeg"
 
 
-MODELS = [("하이쿠", "claude-haiku-5-5"), ("소넷", "claude-sonnet-5-5")]
+MODELS = [("하이쿠", "claude-haiku-5-5"), ("소넷", "claude-sonnet-5-5"), ("자동", "")]
 
 
 def send(cfg, raw, ctype, model=""):
@@ -139,6 +140,9 @@ def send(cfg, raw, ctype, model=""):
             with urllib.request.urlopen(req, timeout=240) as r:
                 body = r.read().decode("utf-8", "replace").strip()
                 used = r.headers.get("x-grade-model", "")
+                route = urllib.parse.unquote(r.headers.get("x-grade-route", ""))
+                if not model and route:
+                    body = f"[자동 선택: {used} · {route}]\n" + body
                 if model and used and used != model:
                     body = f"[실제 사용 모델: {used}]\n" + body
         except urllib.error.HTTPError as e:
@@ -211,7 +215,7 @@ class App:
             self.say("설정.json 이 없습니다.")
             return
         keys = json.loads((SAMPLES / "key.json").read_text(encoding="utf-8"))
-        self.say(f"시험 답안지 {len(keys)}장 × 모델 {len(MODELS)}개(하이쿠·소넷) — 동시에 3장씩 채점합니다.\n")
+        self.say(f"시험 답안지 {len(keys)}장 × 모델 {len(MODELS)}개(하이쿠·소넷·자동) — 동시에 3장씩 채점합니다.\n")
 
         def one(job):
             fn, (mname, mid) = job

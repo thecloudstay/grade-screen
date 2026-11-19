@@ -15,6 +15,9 @@ export const SYSTEM = [
   "Line 1: 수험번호: <exam number on the sheet, or 없음> | 이름: <name on the sheet, or 없음>\n",
   "Line 2: 점수: <correct>/<graded> (미표기 <unmarked count>)\n",
   "Line 3: 촬영: <one of 좋음, 멀리서, 기울어짐, 흐림, 어두움, 잘림> (잘린 문항: <numbers or 없음>)\n",
+  "Line 4: 판단: 난이도 <쉬움, 보통, 어려움> | 확신 <높음, 낮음>\n",
+  "  (어려움 = multi-step calculation, long written answers or specialist reasoning; ",
+  "확신 낮음 = any answer you are not sure of, or marks you could not read clearly)\n",
   "Then one line per graded question, in question order:\n",
   "<number>번 | 내 답: <learner answer> | 정답: <correct answer> | <O or X>\n",
   "Then one line per unmarked question:\n",
@@ -56,7 +59,32 @@ export const DEFAULT_CONFIG = {
     { model: "claude-haiku-5-5", max_tokens: 8000, thinking: { type: "disabled" } },
   ],
   allow_override: ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"],
+  // 난이도 자동 판단: 하이쿠가 먼저 채점하고, 스스로 「어려움」이나 「확신 낮음」이라 하면 소넷이 다시 채점
+  route: { first: "claude-haiku-5-5", escalate: "claude-sonnet-5-5", escalate_if: ["어려움", "낮음"] },
 };
+
+export function needsEscalation(text, words) {
+  const line = (text.match(/^\s*판단\s*[:：].*$/m) || [""])[0];
+  if (!line) return true;                          // 판단 줄이 없으면 안전하게 올린다
+  return (words || []).some((w) => line.includes(w));
+}
+
+// 난이도에 따라 모델 자동 선택. prefer(시험용 지정)가 있으면 그 모델만 우선.
+export async function gradeAuto({ img, media, apiKey, config, prefer }) {
+  const cfg = config || DEFAULT_CONFIG;
+  const r = cfg.route;
+  if (prefer || !r) return { ...(await gradeImage({ img, media, apiKey, config: cfg, prefer })), route: "지정" };
+  const first = await gradeImage({ img, media, apiKey, config: cfg, prefer: r.first });
+  if (first.model !== r.first || !needsEscalation(first.text, r.escalate_if)) {
+    return { ...first, route: "빠른 채점" };
+  }
+  try {
+    const second = await gradeImage({ img, media, apiKey, config: cfg, prefer: r.escalate });
+    return { ...second, route: "어려움→정밀 채점" };
+  } catch (_) {
+    return { ...first, route: "정밀 채점 실패→빠른 결과" };
+  }
+}
 let _cfg = null, _cfgAt = 0;
 export async function loadConfig() {
   if (_cfg && Date.now() - _cfgAt < 300000) return _cfg;
