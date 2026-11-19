@@ -27,8 +27,11 @@ EXAMS = [
     dict(tag="관세사_관세법개론", title="관세사 1차 관세법개론(2026 제43회)",
          pdf_hint=("관세사", "1교시"), rng=(1, 40),
          ans="4 1 2 2 2 3 1 1 3 5 2 4 2 1 5 1 5 5 3 2 4 3 4 4 3 4 3 3 5 2 2 4 2 5 5 1 5 1 1 3"),
+    # 행정사 문제지는 그림으로 된 스캔본이라 글자 좌표가 없다 → 쪽별 문항을 직접 지정, 표시 없이(미표기) 정답만 시험
     dict(tag="행정사_행정법", title="행정사 1차 행정법(2026 제14회)",
          pdf_hint=("행정사", ""), rng=(26, 50),
+         pages={9: [26, 27, 28], 10: [29, 30, 31], 11: [32, 33, 34], 12: [35, 36, 37],
+                13: [38, 39, 40, 41], 14: [42, 43, 44], 15: [45, 46, 47], 16: [48, 49, 50]},
          ans="4 3 5 2 4 1 3 3 3 1 2 5 4 2 1 1 4 2 4 1 3 3 5 5 4"),
 ]
 
@@ -41,7 +44,7 @@ def find_pdf(src, hint):
     return None
 
 
-def layout(page):
+def layout(page, expect):
     """문항 번호와 보기 글자 위치. 두 단 편집을 고려해 단(왼/오)별로 읽는다."""
     W = page.rect.width
     qs, chs = [], []
@@ -58,7 +61,17 @@ def layout(page):
                 if c["c"] in CIRC:
                     x0, y0, x1, y1 = c["bbox"]
                     chs.append((CIRC.index(c["c"]) + 1, (x0 + x1) / 2, (y0 + y1) / 2, x1 - x0))
-    col = lambda x: 0 if x < W / 2 else 1
+    two = any(q[1] > W * 0.45 for q in qs)          # 오른쪽 단에도 문항이 있으면 두 단 편집
+    col = (lambda x: 0 if x < W / 2 else 1) if two else (lambda x: 0)
+    # 지문 속 「1.」 같은 목록 번호를 문항으로 오인하지 않게: 읽는 순서(단→위아래)로 이어지는 번호만
+    qs.sort(key=lambda t: (col(t[1]), t[2]))
+    seq = []
+    for q in qs:
+        if q[0] == expect[0] + 1 or (not expect[1] and q[0] >= 1 and expect[0] == 0):
+            seq.append(q)
+            expect[0] = q[0]
+            expect[1] = True
+    qs = seq
     out = {}
     for k, cx, cy, w in chs:
         cands = [q for q in qs if col(q[1]) == col(cx) and q[2] <= cy + 2]
@@ -99,8 +112,14 @@ def main(src, dst):
             continue
         answers = dict(zip(range(ex["rng"][0], ex["rng"][1] + 1), map(int, ex["ans"].split())))
         doc = pymupdf.open(pdf)
+        expect = [ex["rng"][0] - 1, ex["rng"][0] > 1]   # 직전 문항 번호
         for pno, page in enumerate(doc):
-            lay = {q: v for q, v in layout(page).items() if q in answers}
+            if ex.get("pages"):
+                if pno + 1 not in ex["pages"]:
+                    continue
+                lay = {q: {} for q in ex["pages"][pno + 1]}
+            else:
+                lay = {q: v for q, v in layout(page, expect).items() if q in answers}
             if not lay:
                 continue
             zoom = 2.0
