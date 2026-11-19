@@ -92,7 +92,7 @@ Deno.serve(async (req) => {
     // 2) 토큰 소모형: 컴퓨터가 꺼져 있거나 일꾼이 실패·지연
     if (!out) {
       if (q.enabled !== false && q.api_fallback === false && !prefer) {
-        return txt("오류: 채점 컴퓨터가 꺼져 있습니다\n", 503);
+        return txt("오류: 구독 채점 안 됨(컴퓨터 꺼짐 또는 시간 초과)\n", 503);
       }
       try {
         const r = await gradeAuto({ img, media, apiKey: env("GRADE_ANTHROPIC_KEY") || env("ANTHROPIC_API_KEY"), config, prefer });

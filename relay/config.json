@@ -19,9 +19,11 @@
     "enabled": true,
     "alive_sec": 45,
     "pick_sec": 15,
-    "wait_sec": 80,
+    "wait_sec": 125,
     "api_fallback": false,
     "worker_model": "sonnet",
-    "_메모": "2026-11-19 18:56 대표 지시 「빨리 멈춰」: 토큰 소모형 차단(api_fallback=false). 구독 채점일꾼이 켜진 뒤 다시 true 로 바꿀지 대표 결정"
+    "_메모": "2026-11-19 18:56 대표 지시 「빨리 멈춰」: 토큰 소모형 차단(api_fallback=false). 구독 채점일꾼이 켜진 뒤 다시 true 로 바꿀지 대표 결정",
+    "worker_effort": "medium",
+    "worker_timeout": 115
   }
 }

@@ -557,6 +557,7 @@ class App:
         cfg = self._config()
         relays = cfg.get("relays") or []
         last = ""
+        reached = False   # 중계기가 응답은 했는지(했다면 구독 채점을 이미 시도한 것)
         if relays:
             raw, ctype = prepare_file(path)
             for url in relays:
@@ -568,7 +569,7 @@ class App:
                 })
                 route = ""
                 try:
-                    with urllib.request.urlopen(req, timeout=150) as resp:
+                    with urllib.request.urlopen(req, timeout=180) as resp:
                         body = resp.read().decode("utf-8", "replace").strip()
                         import urllib.parse as _p
                         route = _p.unquote(resp.headers.get("x-grade-route", ""))
@@ -580,6 +581,7 @@ class App:
                     last = f"{name} 연결 실패"
                     log_relay(name, "연결 실패", str(e))
                     continue
+                reached = True
                 log_relay(name, f"{len(body)}자", body[:200])
                 if not body:
                     last = f"{name} 빈 응답"
@@ -588,8 +590,10 @@ class App:
                     last = f"{name} {body}"
                     continue
                 return body, f"{name} 중계 · {route or '경로 모름'}"
-        # 중계기에 닿지 않으면(인터넷 등) 이 컴퓨터의 구독 클로드로 직접 → 그래도 안 되면 클로드 키
+        # 중계기에 아예 닿지 않을 때만(인터넷 끊김 등) 이 컴퓨터의 구독 클로드로 직접
         try:
+            if reached:
+                raise RuntimeError("중계기가 이미 구독 채점을 시도함")
             import importlib.util as _u
             from importlib.machinery import SourceFileLoader as _L
             _wp = str(HERE / "채점일꾼.pyw")
