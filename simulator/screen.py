@@ -290,6 +290,38 @@ def _answer_lines(label, text, col):
     return out
 
 
+GRID_C, GRID_R = 5, 3
+CELL_W, CELL_H = W // GRID_C, H // GRID_R      # 32 × 26 화소
+GRID_SIZES = (17, 15, 13, 11, 10)
+
+
+def grid_text(ans):
+    """칸에 넣을 정답: 보기 번호가 있으면 번호만(③ 20% → 3)."""
+    a = (ans or "").strip()
+    if a and "①" <= a[0] <= "⑳":       # 동그라미 숫자는 작은 화면에서 흐려 굵은 숫자로
+        return str(ord(a[0]) - ord("①") + 1)
+    return a
+
+
+def draw_grid(d, data, page):
+    """머리줄 없이 칸 15개. 칸 왼쪽 위 작은 번호, 가운데 정답(녹색).
+    틀린 문항은 흰 테두리, 미표기는 번호 뒤에 「-」."""
+    nf = font(10, True)
+    for i, (it, text, size) in enumerate(data["cells"]):
+        cx, cy = (i % GRID_C) * CELL_W, (i // GRID_C) * CELL_H
+        if not it.ok:
+            d.rectangle([cx, cy, cx + CELL_W - 1, cy + CELL_H - 1], outline=FG)
+        no = f"{it.label or it.no}" + ("-" if it.blank else "")
+        d.text((cx + 2, cy + 1), no, font=nf, fill=FG, anchor="lt")
+        d.text((cx + CELL_W / 2, cy + CELL_H - 3), text, font=font(size, True),
+               fill=GREEN, anchor="ms")
+    if page and page[1] > 1:   # 빈 칸이 있으면 오른쪽 아래에 쪽 번호
+        n = len(data["cells"])
+        if n < GRID_C * GRID_R:
+            d.text((W - 2, H - 2), f"{page[0]}/{page[1]}", font=font(9), fill=FG,
+                   anchor="rd")
+
+
 def wrap_calc(text, f, width):
     """풀이식 줄바꿈: 숫자 중간이 아니라 → = × + 같은 기호나 빈칸 뒤에서 끊는다."""
     toks = [t for t in re.split(r"(?<=[ →=×÷+\-])", text) if t]
@@ -372,39 +404,21 @@ def build_pages(r, notes=False):
                             "mine": mine})
                 for n, ch in enumerate(chunks)]
 
-    # 문항 순서대로: 일반 문항은 목록 쪽(한 쪽 per줄), 계산 문항(틀림·미표기)은
-    # 정답과 풀이식을 한 쪽에 크게. 해설이 켜져 있으면 해설 쪽은 목록 뒤에 모음.
-    seq, rows, later = [], [], []
-
-    def flush():
-        for k in range(0, len(rows), per):
-            seq.append(("list", {"rows": rows[k:k + per], "h": row_h, "nsize": nsize}))
-        rows.clear()
-
-    for it in items:
-        if it.calc and not it.ok:
-            flush()
-            seq.extend(detail_pages(it))
-            continue
-        right = (it.answer if it.blank else
-                 it.mine if it.ok else f"{it.mine}→{it.answer}")
-        size = next((z for z in sizes if tw(right, font(z, True)) <= room), 0)
-        if size:
-            rows.append((it, right, size))
-        elif it.ok:
-            rows.append((it, fit(right, font(sizes[-1], True), room), sizes[-1]))
-        else:                                # 한 줄에 안 들어가면 그 자리에서 크게 한 쪽
-            flush()
-            seq.extend(detail_pages(it))
-            continue
-        if not it.ok and notes and it.note:
+    # 바둑판(가로 5 × 세로 3 = 15문항)으로 모든 문항의 정답을 한 장에 최대한 담는다.
+    # 칸 안 정답이 너무 길거나, 틀린 계산 문항(풀이식), 해설이 켜진 오답은 뒤에 따로 한 쪽씩.
+    cells, later = [], []
+    for it in r.items:
+        short = grid_text(it.answer)
+        size = next((z for z in GRID_SIZES if tw(short, font(z, True)) <= CELL_W - 2), 0)
+        # 칸에 안 들어가는 긴 정답은 「▶」(뒤쪽에 크게 따로 보여 줌)
+        cells.append((it, short if size else "▶", size or 15))
+        if (not it.ok or not size) and (it.calc or not size or (notes and it.note)):
             later.append(it)
-    flush()
-
-    if not seq:
-        pages.append(("msg", {"title": "모두 정답", "color": GREEN,
-                              "body": "틀린 문항이 없습니다."}))
-    pages.extend(seq)
+    if not cells:
+        pages.append(("msg", {"title": "문항 없음", "body": "읽힌 문항이 없습니다."}))
+    per_page = GRID_C * GRID_R
+    for k in range(0, len(cells), per_page):
+        pages.append(("grid", {"cells": cells[k:k + per_page]}))
     for it in later:
         pages.extend(detail_pages(it))
 
@@ -556,6 +570,8 @@ def render(page, index=0, total=1, frame=0):
         draw_summary(d, data, pg)
     elif kind == "list":
         draw_list(d, data, pg)
+    elif kind == "grid":
+        draw_grid(d, data, pg)
     elif kind == "detail":
         draw_detail(d, data, pg)
     elif kind == "weak":
