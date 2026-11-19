@@ -56,12 +56,10 @@ export const DEFAULT_CONFIG = {
   models: [
     { model: "claude-sonnet-5-5", max_tokens: 16000 },
     { model: "claude-opus-5-5", max_tokens: 16000 },
-    // 하이쿠 5.5 는 생각이 기본으로 켜져 있고 그 분량이 최대 길이에 포함된다 → 끄고 넉넉히
-    { model: "claude-haiku-5-5", max_tokens: 8000, thinking: { type: "disabled" } },
   ],
-  allow_override: ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"],
-  // 난이도 자동 판단: 하이쿠가 먼저 채점하고, 스스로 「어려움」이나 「확신 낮음」이라 하면 소넷이 다시 채점
-  route: { first: "claude-haiku-5-5", escalate: "claude-sonnet-5-5", escalate_if: ["어려움", "낮음"] },
+  // 대표 결정(2026-11-19): 하이쿠는 오답률이 높아 쓰지 않는다. 소넷 기본, 오퍼스 예비.
+  allow_override: ["claude-sonnet-5-5", "claude-opus-5-5"],
+  route: null,
 };
 
 export function needsEscalation(text, words) {
