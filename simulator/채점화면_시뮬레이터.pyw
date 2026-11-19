@@ -603,8 +603,7 @@ class App:
                 return W.grade_with_subscription(cl, job), "이 컴퓨터 구독"
         except Exception as e:
             last = (last + " / " if last else "") + f"구독 직접 실패 {str(e)[:60]}"
-        if os.environ.get("ANTHROPIC_API_KEY"):
-            return G.grade(path, True), "이 컴퓨터 직접"
+        # 대표 지시(2026-11-19): 이 컴퓨터에서 클로드 키(충전금)로 직접 채점하는 길은 막음
         raise RuntimeError(last or "채점 경로가 없습니다")
 
     # ------------------------------------------------------------ 휴대폰 수신
