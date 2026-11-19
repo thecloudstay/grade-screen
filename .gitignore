@@ -3,3 +3,4 @@ __pycache__/
 simulator/설정.json
 supabase/functions/_shared/
 .netlify/
+firmware/*/config_local.h
