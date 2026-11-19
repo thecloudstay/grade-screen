@@ -279,16 +279,13 @@ class App:
         self.last_seen = self._newest_mtime()
         self.jobs = queue.Queue()
         self.ip = lan_ip()
-        self.phone_state = "휴대폰 대기 준비 중"
-        self._start_server()
+        # 장치 두 대가 각각 무선으로 도는 구조로 바뀌어 휴대폰 수신·USB 휴대폰·모듈 직결은 끔
+        self.phone_state = ""
         threading.Thread(target=self._worker, daemon=True).start()
         self.usb_state = ""
-        self.mod_state = "모듈 없음"
+        self.mod_state = ""
         self.ser = None
         self.ser_lock = threading.Lock()
-        threading.Thread(target=self._module_watch, daemon=True).start()
-        if os.name == "nt":
-            threading.Thread(target=self._usb_watch, daemon=True).start()
         self._build()
         self._load_newest(initial=True)
         self._tick()
@@ -424,7 +421,8 @@ class App:
             info += f"   ·   {self.src}"
         if getattr(self, "via", ""):
             info += f"   ·   {self.via}"
-        info += f"   ·   {self.mod_state}"
+        if self.mod_state:
+            info += f"   ·   {self.mod_state}"
         if self.usb_state:
             info += f"   ·   {self.usb_state}"
         self.status.config(text=info)
