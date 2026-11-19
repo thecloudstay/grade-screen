@@ -569,6 +569,8 @@ class App:
                 try:
                     with urllib.request.urlopen(req, timeout=150) as resp:
                         body = resp.read().decode("utf-8", "replace").strip()
+                        import urllib.parse as _p
+                        route = _p.unquote(resp.headers.get("x-grade-route", ""))
                 except urllib.error.HTTPError as e:
                     body = e.read().decode("utf-8", "replace").strip()
                     if e.code == 401:
@@ -584,7 +586,7 @@ class App:
                 if body.startswith("오류"):
                     last = f"{name} {body}"
                     continue
-                return body, f"{name} 중계"
+                return body, f"{name} 중계 · {route or '경로 모름'}"
         # 중계기에 닿지 않으면(인터넷 등) 이 컴퓨터의 구독 클로드로 직접 → 그래도 안 되면 클로드 키
         try:
             import importlib.util as _u
