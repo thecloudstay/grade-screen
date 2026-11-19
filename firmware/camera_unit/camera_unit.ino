@@ -62,7 +62,7 @@ static volatile bool gotAck = false;
 static volatile uint16_t ackId = 0;
 
 // ───────────────────────── 작은 도우미 ─────────────────────────
-static void led(bool on) { digitalWrite(PIN_LED, on ? LOW : HIGH); }
+static void led(bool on) { if (PIN_LED >= 0) digitalWrite(PIN_LED, on ? LOW : HIGH); }
 
 static void blink(int n, int ms = 120) {
   for (int i = 0; i < n; i++) { led(true); delay(ms); led(false); delay(ms); }
@@ -146,10 +146,11 @@ static bool sendResult(const String& text) {
 static bool cameraStart() {
   camera_config_t c = {};
   c.ledc_channel = LEDC_CHANNEL_0; c.ledc_timer = LEDC_TIMER_0;
-  c.pin_d0 = 15; c.pin_d1 = 17; c.pin_d2 = 18; c.pin_d3 = 16;
-  c.pin_d4 = 14; c.pin_d5 = 12; c.pin_d6 = 11; c.pin_d7 = 48;
-  c.pin_xclk = 10; c.pin_pclk = 13; c.pin_vsync = 38; c.pin_href = 47;
-  c.pin_sccb_sda = 40; c.pin_sccb_scl = 39;
+  static const int P[] = { CAM_PINS };   // 보드별 배치(config.h)
+  c.pin_d0 = P[0]; c.pin_d1 = P[1]; c.pin_d2 = P[2]; c.pin_d3 = P[3];
+  c.pin_d4 = P[4]; c.pin_d5 = P[5]; c.pin_d6 = P[6]; c.pin_d7 = P[7];
+  c.pin_xclk = P[8]; c.pin_pclk = P[9]; c.pin_vsync = P[10]; c.pin_href = P[11];
+  c.pin_sccb_sda = P[12]; c.pin_sccb_scl = P[13];
   c.pin_pwdn = -1; c.pin_reset = -1;
   c.xclk_freq_hz = 20000000;
   c.pixel_format = PIXFORMAT_JPEG;
@@ -310,7 +311,7 @@ static void setupMode() {
 
 // ───────────────────────── 본 흐름 ─────────────────────────
 void setup() {
-  pinMode(PIN_LED, OUTPUT);
+  if (PIN_LED >= 0) pinMode(PIN_LED, OUTPUT);
   led(false);
   pinMode(PIN_SHUTTER, INPUT_PULLUP);
   // 감시 타이머: 200초 넘게 멈추면 자동 재시작(중계기 최대 대기 170초 + 여유)
