@@ -102,11 +102,11 @@ def fit(text, f, width):
 # ---------------------------------------------------------------- 결과 해석
 ITEM_RE = re.compile(
     r"^\s*(\d+)\s*번\s*\|\s*내\s*답\s*[:：]\s*(.*?)\s*\|\s*정답\s*[:：]\s*(.*?)"
-    r"\s*(?:\|\s*([OXox○×]))?\s*$"
+    r"\s*(?:\|\s*([OXox○×]))?\s*(?:\|\s*문항\s*[:：]\s*(.*?))?\s*$"
 )
 UNM_RE = re.compile(
     r"^\s*(\d+)\s*번\s*\|\s*(?:미표기|내\s*답\s*[:：]\s*(?:없음|미표기|-|—|\(없음\))?)"
-    r"\s*\|\s*정답\s*[:：]\s*(.*?)\s*(?:\|\s*\S+)?\s*$"
+    r"\s*\|\s*정답\s*[:：]\s*(.*?)\s*(?:\|\s*[OXox○×-])?\s*(?:\|\s*문항\s*[:：]\s*(.*?))?\s*$"
 )
 NOTE_RE = re.compile(r"^\s*해설\s*(\d+)\s*번\s*[:：]\s*(.*)$")
 SCORE_RE = re.compile(r"점수\s*[:：]\s*(\d+)\s*/\s*(\d+)")
@@ -121,6 +121,8 @@ class Item:
     ok: bool = False
     note: str = ""
     blank: bool = False   # 내 답 없음(미표기)
+    qkey: str = ""        # 문항 첫머리(여러 장 합칠 때 같은 문항인지 가리는 데 씀)
+    label: str = ""       # 화면에 쓸 번호(번호가 다시 1번부터 시작하면 「2-1」처럼)
 
 
 @dataclass
@@ -149,14 +151,15 @@ def parse(text):
             continue
         m = UNM_RE.match(line)
         if m:
-            r.items.append(Item(m.group(1), "", m.group(2), blank=True))
+            r.items.append(Item(m.group(1), "", m.group(2), blank=True,
+                                qkey=(m.group(3) or "").strip()))
             in_note = False
             continue
         m = ITEM_RE.match(line)
         if m:
             mark = (m.group(4) or "X").upper()
             r.items.append(Item(m.group(1), m.group(2), m.group(3),
-                                ok=mark in ("O", "○")))
+                                ok=mark in ("O", "○"), qkey=(m.group(5) or "").strip()))
             in_note = False
             continue
         m = SCORE_RE.search(line)
@@ -199,6 +202,61 @@ def parse(text):
         r.correct = sum(1 for i in r.items if i.ok)
     r.unmarked = max(r.unmarked, blanks)
     return r
+
+
+# ---------------------------------------------------------------- 여러 장 합치기
+def _key(q):
+    return re.sub(r"[^0-9A-Za-z가-힣]", "", q or "")[:8]
+
+
+def merge(results):
+    """한 학생이 여러 장을 찍었을 때 문항을 하나로 정리한다.
+
+    - 같은 번호·같은 문항(겹쳐 찍힘): 하나만 남김. 미표기보다 답이 읽힌 쪽, 같으면 나중 사진.
+    - 같은 번호인데 문항이 다름(다음 쪽·다른 과목이 1번부터 다시 시작): 「2-1번」처럼 묶음 번호를 붙임.
+    - 점수·미표기 수는 정리된 문항으로 다시 셈.
+    """
+    out = Result()
+    section = 1
+    seen = {}            # (묶음, 번호) → Item
+    keys = {}            # (묶음, 번호) → 문항 첫머리
+    last_no = 0
+    for r in results:
+        if r.illegible:
+            continue
+        out.who = out.who or r.who
+        if r.weak and r.weak not in out.weak:
+            out.weak = (out.weak + ", " + r.weak).strip(", ")
+        out.shot = r.shot or out.shot
+        for it in r.items:
+            n = int(it.no) if it.no.isdigit() else 0
+            k = _key(it.qkey)
+            cur = (section, n)
+            if cur in seen:
+                same = (not k or not keys.get(cur) or k == keys[cur])
+                if same:                     # 겹쳐 찍힌 같은 문항
+                    old = seen[cur]
+                    if old.blank and not it.blank or (old.blank == it.blank):
+                        it.label = old.label
+                        seen[cur] = it
+                        keys[cur] = k or keys[cur]
+                    continue
+                section += 1                 # 번호가 다시 시작됨 → 새 묶음
+                cur = (section, n)
+            it.label = f"{section}-{n}" if section > 1 else str(n)
+            seen[cur] = it
+            keys[cur] = k
+            last_no = n
+    items = sorted(seen.items(), key=lambda kv: kv[0])
+    if section > 1:                          # 묶음이 여러 개면 첫 묶음도 「1-」 붙여 통일
+        for (sec, n), it in items:
+            it.label = f"{sec}-{n}"
+    out.items = [it for _, it in items]
+    out.correct = sum(1 for i in out.items if i.ok)
+    out.graded = sum(1 for i in out.items if not i.blank)
+    out.unmarked = sum(1 for i in out.items if i.blank)
+    out.has_score = True
+    return out
 
 
 # ---------------------------------------------------------------- 쪽 만들기
@@ -358,7 +416,7 @@ def draw_list(d, data, page):
         m = y + h / 2
         col = YELLOW if it.blank else GREEN if it.ok else RED
         d.rectangle([0, y + 4, 2, y + h - 4], fill=col)
-        d.text((PAD + 3, m), f"{it.no}번", font=nf, fill=FG, anchor="lm")
+        d.text((PAD + 3, m), f"{it.label or it.no}번", font=nf, fill=FG, anchor="lm")
         if not it.blank and not it.ok and "→" in right and right != "자세히 ▶":
             mine, ans = right.split("→", 1)
             af = font(size, True)
@@ -378,7 +436,7 @@ def draw_detail(d, data, page):
     it = data["item"]
     p = data["part"]
     kind = "미표기" if it.blank else "정답" if it.ok else "오답"
-    title = f"{it.no}번 {kind}"
+    title = f"{it.label or it.no}번 {kind}"
     if p[1] > 1:
         title += f" ({p[0]}/{p[1]})"
     _head(d, title, color=YELLOW if it.blank else GREEN if it.ok else RED,

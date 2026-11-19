@@ -265,6 +265,7 @@ class App:
         self.full = tk.BooleanVar(value=False)
         self.watch = tk.BooleanVar(value=True)
         self.grid = tk.BooleanVar(value=True)
+        self.merge_on = tk.BooleanVar(value=True)
         self.pages = [("msg", {"title": "대기 중",
                                "body": "사진 채점 또는 결과 열기를 눌러 주세요."})]
         self.idx = 0
@@ -315,6 +316,10 @@ class App:
         chk("해설 보기", self.full, self.toggle_notes)
         chk("새 결과 자동 표시", self.watch, lambda: None)
         chk("화소 격자", self.grid)
+        chk("여러 장 합치기", self.merge_on, lambda: None)
+        tk.Button(bar, text="새 학생", font=UI_FONT, relief="flat", bg="#24272b",
+                  fg="#e8e8e8", activebackground="#33373c",
+                  command=lambda: setattr(self, "batch", [])).pack(side="left", padx=4)
         tk.Label(bar, text="확대", font=UI_FONT, bg="#0e0f10",
                  fg="#c8c8c8").pack(side="left", padx=(10, 2))
         tk.Spinbox(bar, from_=2, to=8, width=3, textvariable=self.zoom,
@@ -462,7 +467,23 @@ class App:
         self.busy = False
         self.ver += 1
         self.text = text
-        self.pages = S.build_pages(S.parse(text), self.full.get())
+        r = S.parse(text)
+        # 여러 장 합치기: 같은 학생(또는 이름이 안 읽힌 장)을 10분 안에 이어 찍으면 한 결과로 정리
+        now = time.time()
+        batch = getattr(self, "batch", [])
+        if self.merge_on.get() and batch and now - batch[-1][0] < 600 and not r.illegible:
+            who0 = next((b.who for _, b in batch if b.who), "")
+            if not r.who or not who0 or r.who == who0:
+                batch.append((now, r))
+            else:
+                batch = [(now, r)]
+        else:
+            batch = [(now, r)]
+        self.batch = batch
+        self.res = S.merge([b for _, b in batch]) if len(batch) > 1 else r
+        if len(batch) > 1:
+            src = f"{src} · {len(batch)}장 합침"
+        self.pages = S.build_pages(self.res, self.full.get())
         self.idx = 0
         self.src = src
         self.redraw()
@@ -471,7 +492,8 @@ class App:
         """해설 켜고 끄기: 다시 채점하지 않고 화면만 다시 짠다."""
         if self.busy or not getattr(self, "text", ""):
             return
-        self.pages = S.build_pages(S.parse(self.text), self.full.get())
+        self.pages = S.build_pages(getattr(self, "res", None) or S.parse(self.text),
+                                   self.full.get())
         self.idx = min(self.idx, len(self.pages) - 1)
         self.redraw()
 
@@ -811,7 +833,11 @@ class App:
     # ------------------------------------------------------------ 반복 확인
     def _newest(self):
         try:
-            files = list(RESULT_DIR.glob("*.txt"))
+            # 채점 결과(「날짜_시각_이름.txt」)만 본다. 정확도보고·중계기록 같은 기록 글은 빼야
+            # 엉뚱한 글을 결과로 읽어 「0/0」이 뜨지 않는다.
+            import re as _re
+            files = [f for f in RESULT_DIR.glob("*.txt")
+                     if _re.match(r"^\d{8}_\d{6}_", f.name)]
         except Exception:
             return None
         return max(files, key=lambda f: f.stat().st_mtime) if files else None
