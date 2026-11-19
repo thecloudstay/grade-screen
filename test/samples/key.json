@@ -1,0 +1,456 @@
+{
+ "01_기초수학.jpg": {
+  "exam_no": "2026-0007",
+  "name": "김민수",
+  "items": [
+   {
+    "no": 1,
+    "mark": "X",
+    "mine": "①",
+    "answer": "③",
+    "alts": []
+   },
+   {
+    "no": 2,
+    "mark": "O",
+    "mine": "②",
+    "answer": "②",
+    "alts": []
+   },
+   {
+    "no": 3,
+    "mark": "-",
+    "mine": "",
+    "answer": "90",
+    "alts": []
+   },
+   {
+    "no": 4,
+    "mark": "X",
+    "mine": "27",
+    "answer": "55",
+    "alts": []
+   },
+   {
+    "no": 5,
+    "mark": "O",
+    "mine": "②",
+    "answer": "②",
+    "alts": []
+   },
+   {
+    "no": 6,
+    "mark": "O",
+    "mine": "④",
+    "answer": "④",
+    "alts": []
+   }
+  ],
+  "title": "S-OJT 기초수학 평가",
+  "condition": "깨끗한 스캔",
+  "file": "01_기초수학.jpg"
+ },
+ "02_세무.jpg": {
+  "exam_no": "2026-0014",
+  "name": "김민수",
+  "items": [
+   {
+    "no": 1,
+    "mark": "-",
+    "mine": "",
+    "answer": "②",
+    "alts": []
+   },
+   {
+    "no": 2,
+    "mark": "O",
+    "mine": "300000",
+    "answer": "300000",
+    "alts": []
+   },
+   {
+    "no": 3,
+    "mark": "X",
+    "mine": "③",
+    "answer": "②",
+    "alts": []
+   },
+   {
+    "no": 4,
+    "mark": "O",
+    "mine": "①",
+    "answer": "①",
+    "alts": []
+   },
+   {
+    "no": 5,
+    "mark": "X",
+    "mine": "④",
+    "answer": "①",
+    "alts": []
+   },
+   {
+    "no": 6,
+    "mark": "O",
+    "mine": "③",
+    "answer": "③",
+    "alts": []
+   }
+  ],
+  "title": "세무 기초 (세무사 1차 유형)",
+  "condition": "약간 기운 사진",
+  "file": "02_세무.jpg"
+ },
+ "03_회계.jpg": {
+  "exam_no": "2026-0021",
+  "name": "김민수",
+  "items": [
+   {
+    "no": 1,
+    "mark": "O",
+    "mine": "③",
+    "answer": "③",
+    "alts": []
+   },
+   {
+    "no": 2,
+    "mark": "-",
+    "mine": "",
+    "answer": "2000000",
+    "alts": []
+   },
+   {
+    "no": 3,
+    "mark": "O",
+    "mine": "①",
+    "answer": "①",
+    "alts": []
+   },
+   {
+    "no": 4,
+    "mark": "X",
+    "mine": "20000000",
+    "answer": "2000000",
+    "alts": []
+   },
+   {
+    "no": 5,
+    "mark": "X",
+    "mine": "①",
+    "answer": "③",
+    "alts": []
+   },
+   {
+    "no": 6,
+    "mark": "O",
+    "mine": "②",
+    "answer": "②",
+    "alts": []
+   }
+  ],
+  "title": "회계원리 (회계사·전산회계 유형)",
+  "condition": "그림자 진 사진",
+  "file": "03_회계.jpg"
+ },
+ "04_SCM물류.jpg": {
+  "exam_no": "2026-0028",
+  "name": "김민수",
+  "items": [
+   {
+    "no": 1,
+    "mark": "X",
+    "mine": "④",
+    "answer": "②",
+    "alts": []
+   },
+   {
+    "no": 2,
+    "mark": "O",
+    "mine": "316",
+    "answer": "316",
+    "alts": []
+   },
+   {
+    "no": 3,
+    "mark": "-",
+    "mine": "",
+    "answer": "①",
+    "alts": []
+   },
+   {
+    "no": 4,
+    "mark": "X",
+    "mine": "③",
+    "answer": "①",
+    "alts": []
+   },
+   {
+    "no": 5,
+    "mark": "O",
+    "mine": "②",
+    "answer": "②",
+    "alts": []
+   },
+   {
+    "no": 6,
+    "mark": "O",
+    "mine": "250",
+    "answer": "250",
+    "alts": []
+   }
+  ],
+  "title": "물류·공급망관리 (물류관리사 유형)",
+  "condition": "기울고 흐린 사진",
+  "file": "04_SCM물류.jpg"
+ },
+ "05_부동산.jpg": {
+  "exam_no": "2026-0035",
+  "name": "김민수",
+  "items": [
+   {
+    "no": 1,
+    "mark": "O",
+    "mine": "④",
+    "answer": "④",
+    "alts": []
+   },
+   {
+    "no": 2,
+    "mark": "X",
+    "mine": "①",
+    "answer": "②",
+    "alts": []
+   },
+   {
+    "no": 3,
+    "mark": "-",
+    "mine": "",
+    "answer": "25.4",
+    "alts": []
+   },
+   {
+    "no": 4,
+    "mark": "O",
+    "mine": "②",
+    "answer": "②",
+    "alts": []
+   },
+   {
+    "no": 5,
+    "mark": "O",
+    "mine": "①",
+    "answer": "①",
+    "alts": []
+   },
+   {
+    "no": 6,
+    "mark": "X",
+    "mine": "500",
+    "answer": "250",
+    "alts": []
+   }
+  ],
+  "title": "부동산학 (공인중개사 유형)",
+  "condition": "어둡고 작은 사진",
+  "file": "05_부동산.jpg"
+ },
+ "06_관세.jpg": {
+  "exam_no": "2026-0042",
+  "name": "김민수",
+  "items": [
+   {
+    "no": 1,
+    "mark": "X",
+    "mine": "②",
+    "answer": "①",
+    "alts": []
+   },
+   {
+    "no": 2,
+    "mark": "O",
+    "mine": "80000",
+    "answer": "80000",
+    "alts": []
+   },
+   {
+    "no": 3,
+    "mark": "O",
+    "mine": "②",
+    "answer": "②",
+    "alts": []
+   },
+   {
+    "no": 4,
+    "mark": "X",
+    "mine": "①",
+    "answer": "④",
+    "alts": []
+   },
+   {
+    "no": 5,
+    "mark": "O",
+    "mine": "①",
+    "answer": "①",
+    "alts": []
+   },
+   {
+    "no": 6,
+    "mark": "-",
+    "mine": "",
+    "answer": "①",
+    "alts": []
+   }
+  ],
+  "title": "관세법 (관세사 유형)",
+  "condition": "많이 흐린 사진",
+  "file": "06_관세.jpg"
+ },
+ "07_건축.jpg": {
+  "exam_no": "2026-0049",
+  "name": "김민수",
+  "items": [
+   {
+    "no": 1,
+    "mark": "X",
+    "mine": "④",
+    "answer": "③",
+    "alts": []
+   },
+   {
+    "no": 2,
+    "mark": "O",
+    "mine": "②",
+    "answer": "②",
+    "alts": []
+   },
+   {
+    "no": 3,
+    "mark": "-",
+    "mine": "",
+    "answer": "5",
+    "alts": []
+   },
+   {
+    "no": 4,
+    "mark": "X",
+    "mine": "④",
+    "answer": "①",
+    "alts": []
+   },
+   {
+    "no": 5,
+    "mark": "O",
+    "mine": "①",
+    "answer": "①",
+    "alts": []
+   },
+   {
+    "no": 6,
+    "mark": "O",
+    "mine": "223",
+    "answer": "223",
+    "alts": [
+     "222"
+    ]
+   }
+  ],
+  "title": "건축시공 (산업기사 유형)",
+  "condition": "많이 기운 사진",
+  "file": "07_건축.jpg"
+ },
+ "08_피디에프_세무회계.pdf": {
+  "title": "피디에프 두 쪽(세무+회계)",
+  "condition": "문서 파일",
+  "file": "08_피디에프_세무회계.pdf",
+  "items": [
+   {
+    "no": 1,
+    "mark": "-",
+    "mine": "",
+    "answer": "②",
+    "alts": []
+   },
+   {
+    "no": 2,
+    "mark": "O",
+    "mine": "300000",
+    "answer": "300000",
+    "alts": []
+   },
+   {
+    "no": 3,
+    "mark": "X",
+    "mine": "③",
+    "answer": "②",
+    "alts": []
+   },
+   {
+    "no": 4,
+    "mark": "O",
+    "mine": "①",
+    "answer": "①",
+    "alts": []
+   },
+   {
+    "no": 5,
+    "mark": "X",
+    "mine": "④",
+    "answer": "①",
+    "alts": []
+   },
+   {
+    "no": 6,
+    "mark": "O",
+    "mine": "③",
+    "answer": "③",
+    "alts": []
+   }
+  ],
+  "items_page2": [
+   {
+    "no": 1,
+    "mark": "O",
+    "mine": "③",
+    "answer": "③",
+    "alts": []
+   },
+   {
+    "no": 2,
+    "mark": "-",
+    "mine": "",
+    "answer": "2000000",
+    "alts": []
+   },
+   {
+    "no": 3,
+    "mark": "O",
+    "mine": "①",
+    "answer": "①",
+    "alts": []
+   },
+   {
+    "no": 4,
+    "mark": "X",
+    "mine": "20000000",
+    "answer": "2000000",
+    "alts": []
+   },
+   {
+    "no": 5,
+    "mark": "X",
+    "mine": "①",
+    "answer": "③",
+    "alts": []
+   },
+   {
+    "no": 6,
+    "mark": "O",
+    "mine": "②",
+    "answer": "②",
+    "alts": []
+   }
+  ],
+  "exam_no": "2026-0014",
+  "name": "김민수"
+ }
+}
