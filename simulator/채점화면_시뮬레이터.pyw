@@ -566,6 +566,7 @@ class App:
                     "x-device-token": cfg.get("token", ""),
                     "x-device-id": cfg.get("device_id", "simulator"),
                 })
+                route = ""
                 try:
                     with urllib.request.urlopen(req, timeout=150) as resp:
                         body = resp.read().decode("utf-8", "replace").strip()
