@@ -18,6 +18,15 @@ jobs:
           if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$PROJECT_REF" ]; then
             echo "비밀값이 아직 없어 배포를 건너뜁니다"; echo "skip=1" >> $GITHUB_OUTPUT
           fi
+      - name: 기록 표 만들기(있으면 그대로)
+        if: steps.chk.outputs.skip != '1'
+        run: |
+          python3 - <<'PY' > /tmp/q.json
+          import json; print(json.dumps({"query": open("supabase/schema.sql", encoding="utf-8").read()}))
+          PY
+          curl -sf -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" \
+            --data @/tmp/q.json > /dev/null && echo "기록 표 준비됨"
       - uses: supabase/setup-cli@v1
         if: steps.chk.outputs.skip != '1'
       - name: 공통 부분 복사
