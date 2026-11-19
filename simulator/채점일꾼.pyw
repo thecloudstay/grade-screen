@@ -131,8 +131,8 @@ def main():
             base, token = relay_base(cfg), cfg.get("token", "")
             claude = find_claude()
             if not claude:
-                log("클로드 명령줄 도구를 못 찾음 → 10분 뒤 다시 (그동안 토큰 소모형)")
-                time.sleep(600)
+                log("클로드 명령줄 도구를 못 찾음 → 1분 뒤 다시 (그동안 토큰 소모형)")
+                time.sleep(60)
                 continue
             # 쉬는 중에도 「켜져 있음」은 알린다 → 토큰 소모형이 끊기면 되살림 일은 맡는다
             job = post(base + "/worker/next", token, {}, timeout=40, standby=standby)

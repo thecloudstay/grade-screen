@@ -20,6 +20,9 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 RESULT_DIR = Path.home() / "grade_results"
 SAMPLE_DIRS = [HERE / "시험샘플", HERE / "시험샘플_고급"]
+# 기출 시험 폴더가 있으면 그것만 돈다(구독형 채점, 한 장씩)
+if (HERE / "시험샘플_기출" / "key.json").exists():
+    SAMPLE_DIRS = [HERE / "시험샘플_기출"]
 
 import tkinter as tk  # noqa: E402
 
@@ -124,7 +127,9 @@ def prepare(path):
         return buf.getvalue(), "image/jpeg"
 
 
-MODELS = [("소넷", "claude-sonnet-5-5"), ("오퍼스", "claude-opus-5-5")]
+# 대표 결정(2026-11-19): 시험도 구독형으로만(충전금 보호). 모델 지정 없이 보내면 중계기가 구독형으로 보냄
+MODELS = [("구독", "")]
+STOP = {"why": ""}
 
 
 def send(cfg, raw, ctype, model=""):
@@ -134,7 +139,7 @@ def send(cfg, raw, ctype, model=""):
             "content-type": ctype,
             "x-device-token": cfg.get("token", ""),
             "x-device-id": "accuracy-test",
-            "x-grade-model": model,
+            **({"x-grade-model": model} if model else {}),
         })
         try:
             with urllib.request.urlopen(req, timeout=240) as r:
@@ -142,6 +147,8 @@ def send(cfg, raw, ctype, model=""):
                 used = r.headers.get("x-grade-model", "")
                 route = urllib.parse.unquote(r.headers.get("x-grade-route", ""))
                 if not model and route:
+                    if "토큰" in route:      # 구독 일꾼이 못 받음 → 충전금 쓰기 전에 시험 멈춤
+                        STOP["why"] = "구독 채점 컴퓨터가 응답하지 않아 시험을 멈췄습니다(충전금 보호)."
                     body = f"[자동 선택: {used} · {route}]\n" + body
                 if model and used and used != model:
                     body = f"[실제 사용 모델: {used}]\n" + body
@@ -228,12 +235,15 @@ class App:
             if kf.exists():
                 for fn, k in json.loads(kf.read_text(encoding="utf-8")).items():
                     keys[fn] = dict(k, _dir=str(d))
-        self.say(f"시험 답안지 {len(keys)}장 × 모델 {len(MODELS)}개(소넷·오퍼스) — 동시에 4장씩 채점합니다(15~25분).\n")
+        self.say(f"시험 답안지 {len(keys)}장 — 구독형으로 한 장씩 채점합니다(장당 20~40초).\n")
 
         def one(job):
             fn, (mname, mid) = job
             k = keys[fn]
             t0 = time.time()
+            if STOP["why"]:
+                return dict(file=fn, error="멈춤", sec=0, model=mname,
+                            cond=k.get("condition", ""), title=k.get("title", ""))
             try:
                 raw, ctype = prepare(Path(k["_dir"]) / fn)
                 text = send(cfg, raw, ctype, mid)
@@ -254,7 +264,7 @@ class App:
                 return dict(file=fn, error=str(e), sec=time.time() - t0, model=mname,
                             cond=k.get("condition", ""), title=k.get("title", ""))
 
-        with ThreadPoolExecutor(4) as ex:
+        with ThreadPoolExecutor(1) as ex:   # 대표 컴퓨터 일꾼은 한 번에 한 장
             jobs = [(fn, m) for m in MODELS for fn in keys]
             results = list(ex.map(one, jobs))
 
@@ -297,6 +307,8 @@ class App:
         out = RESULT_DIR / f"정확도보고_{time.strftime('%Y%m%d_%H%M%S')}.txt"
         RESULT_DIR.mkdir(parents=True, exist_ok=True)
         out.write_text("\n".join(rep), encoding="utf-8")
+        if STOP["why"]:
+            summary.insert(0, STOP["why"])
         self.say("\n" + "\n".join(summary) + f"\n\n보고 파일: {out}")
 
 
