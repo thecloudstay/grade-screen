@@ -133,7 +133,7 @@ def make_sheet(key, title, qs, seed):
     d = ImageDraw.Draw(img)
     d.text((80, 70), title, font=f(BOLD, 40), fill=(20, 20, 20))
     exam_no = f"2026-{seed:04d}"
-    name = STUDENTS[seed % len(STUDENTS)]
+    name = STUDENTS[(seed // 7) % len(STUDENTS)]
     d.text((80, 140), "수험번호", font=f(SANS, 24), fill=(60, 60, 60))
     d.text((620, 140), "성명", font=f(SANS, 24), fill=(60, 60, 60))
     d.line([(190, 172), (560, 172)], fill=(120, 120, 120), width=1)
@@ -216,10 +216,65 @@ def photo(img, st, seed):
     return img
 
 
+def _coeffs(dst, src):
+    """원근 변환 계수(대각선에서 찍은 것처럼)."""
+    import numpy as np
+    A, B = [], []
+    for (x, y), (u, v) in zip(dst, src):
+        A.append([x, y, 1, 0, 0, 0, -u * x, -u * y]); B.append(u)
+        A.append([0, 0, 0, x, y, 1, -v * x, -v * y]); B.append(v)
+    return list(np.linalg.solve(np.array(A, float), np.array(B, float)))
+
+
+def scene(img, kind, seed):
+    """책상 위 종이를 여러 거리·각도에서 찍은 사진 흉내."""
+    rnd = random.Random(seed)
+    W, H = img.size
+    if kind == "대각선":          # 옆에서 비스듬히: 사다리꼴
+        BW, BH = 1600, 1500
+        dst = [(260, 160), (1380, 260), (1500, 1420), (120, 1330)]
+    elif kind == "멀리서":        # 멀리서: 종이가 작고 주변 물건이 많이 보임
+        BW, BH = 2000, 2000
+        dst = [(700, 620), (1300, 640), (1290, 1480), (690, 1460)]
+    elif kind == "가까이":        # 가까이: 종이가 화면을 넘침(가장자리 잘림 없이 크게)
+        BW, BH = 1300, 1700
+        dst = [(-20, -30), (1320, -10), (1310, 1740), (-30, 1720)]
+    else:                          # 위에서 비틀어: 회전된 사다리꼴
+        BW, BH = 1700, 1800
+        dst = [(380, 120), (1520, 360), (1300, 1720), (150, 1460)]
+    src = [(0, 0), (W, 0), (W, H), (0, H)]
+    bg = Image.new("RGB", (BW, BH), (96, 78, 60))   # 나무 책상 색
+    bd = ImageDraw.Draw(bg)
+    for _ in range(40):                              # 책상 결·잡동사니
+        x, y = rnd.randrange(BW), rnd.randrange(BH)
+        bd.line([(x, y), (x + rnd.randrange(-300, 300), y + rnd.randrange(-20, 20))],
+                fill=(110 + rnd.randrange(30), 90, 70), width=rnd.randrange(2, 6))
+    bd.rectangle([60, BH - 260, 420, BH - 60], fill=(200, 200, 205))      # 계산기
+    bd.ellipse([BW - 360, 80, BW - 80, 360], fill=(230, 230, 225))       # 컵
+    paper = img.transform((BW, BH), Image.PERSPECTIVE, _coeffs(dst, src), Image.BICUBIC,
+                          fillcolor=None)
+    mask = Image.new("L", (W, H), 255).transform((BW, BH), Image.PERSPECTIVE,
+                                                  _coeffs(dst, src), Image.BICUBIC)
+    bg.paste(paper, (0, 0), mask)
+    # 조명 얼룩 + 약한 흐림
+    light = Image.radial_gradient("L").resize((BW, BH)).point(lambda v: int(v * 0.35))
+    bg = Image.composite(Image.new("RGB", (BW, BH), (40, 35, 30)), bg, light)
+    return bg.filter(ImageFilter.GaussianBlur(0.8))
+
+
+SCENES = {
+    "11_대각선_회계.jpg": ("03_회계", "대각선"),
+    "12_멀리서_관세.jpg": ("06_관세", "멀리서"),
+    "13_가까이_수학.jpg": ("01_기초수학", "가까이"),
+    "14_비틀어_부동산.jpg": ("05_부동산", "비틀어"),
+}
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     keys = {}
     pages = []
+    clean = {}
     for n, (key, (title, qs)) in enumerate(SETS.items(), 1):
         img, k = make_sheet(key, title, qs, n * 7)
         st = STYLES[key]
@@ -230,6 +285,7 @@ def main():
         keys[fn] = k
         if key in ("02_세무", "03_회계"):
             pages.append(img)
+        clean[key] = (img, k)
     # 피디에프 형식 시험: 세무·회계 두 쪽을 한 파일로(깨끗한 문서)
     pdf = "08_피디에프_세무회계.pdf"
     pages[0].save(OUT / pdf, save_all=True, append_images=pages[1:], resolution=150)
@@ -237,6 +293,10 @@ def main():
                      file=pdf, items=keys["02_세무.jpg"]["items"],
                      items_page2=keys["03_회계.jpg"]["items"],
                      exam_no=keys["02_세무.jpg"]["exam_no"], name=keys["02_세무.jpg"]["name"])
+    for fn, (src_key, kind) in SCENES.items():
+        img, k = clean[src_key]
+        scene(img, kind, len(fn)).save(OUT / fn, quality=80)
+        keys[fn] = dict(k, file=fn, condition=f"{kind}에서 찍은 사진(책상 배경)")
     (OUT / "key.json").write_text(json.dumps(keys, ensure_ascii=False, indent=1), encoding="utf-8")
     print("만든 답안지:", len(keys))
 

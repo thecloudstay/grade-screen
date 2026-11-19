@@ -133,6 +133,7 @@ class Result:
     illegible: bool = False
     has_score: bool = False
     who: str = ""
+    shot: str = ""
 
 
 def parse(text):
@@ -176,6 +177,9 @@ def parse(text):
             if it:
                 it.note = m.group(2).strip()
             in_note = False
+            continue
+        if line.startswith("촬영"):
+            r.shot = line.split(":", 1)[-1].strip()
             continue
         if line.startswith("수험번호") or line.startswith("이름"):
             nm = re.search(r"이름\s*[:：]\s*([^|]+)", line)
@@ -286,6 +290,14 @@ def build_pages(r, notes=False):
         for n, ch in enumerate(chunks):
             pages.append(("detail", {"item": it, "lines": ch,
                                      "part": (n + 1, len(chunks))}))
+
+    if r.shot and not r.shot.startswith("좋음"):
+        tip = {"멀리서": "더 가까이 찍어 주세요", "기울어짐": "정면 위에서 찍어 주세요",
+               "흐림": "흔들리지 않게 다시 찍어 주세요", "어두움": "밝은 곳에서 찍어 주세요",
+               "잘림": "시험지 전체가 들어오게 찍어 주세요"}
+        key = next((k for k in tip if r.shot.startswith(k)), "")
+        pages.append(("msg", {"title": "촬영 " + (key or "확인"), "color": YELLOW,
+                              "body": (tip.get(key, "") + " · " + r.shot).strip(" ·")}))
 
     if notes and r.weak:
         ww = wrap(r.weak, font(13), W - PAD * 2)

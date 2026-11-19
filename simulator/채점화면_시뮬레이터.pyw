@@ -44,6 +44,60 @@ def log_relay(name, state, detail=""):
         pass
 
 
+def _largest_blob(mask):
+    """밝은 덩어리 중 가장 큰 것(=종이)의 테두리 상자. 컵·계산기 같은 작은 물건은 버린다."""
+    w, h = mask.size
+    px = mask.tobytes()
+    seen = bytearray(w * h)
+    best, best_box = 0, None
+    for start in range(w * h):
+        if px[start] == 0 or seen[start]:
+            continue
+        stack = [start]
+        seen[start] = 1
+        n, x0, y0, x1, y1 = 0, w, h, 0, 0
+        while stack:
+            i = stack.pop()
+            n += 1
+            x, y = i % w, i // w
+            x0, y0, x1, y1 = min(x0, x), min(y0, y), max(x1, x), max(y1, y)
+            for j in (i - 1 if x else -1, i + 1 if x < w - 1 else -1, i - w, i + w):
+                if 0 <= j < w * h and px[j] and not seen[j]:
+                    seen[j] = 1
+                    stack.append(j)
+        if n > best:
+            best, best_box = n, (x0, y0, x1 + 1, y1 + 1)
+    return best_box
+
+
+def crop_paper(im):
+    """책상 배경에서 밝은 종이 영역만 잘라 글씨를 크게 보낸다(멀리서 찍은 사진 대비)."""
+    from PIL import ImageFilter
+    g = im.convert("L")
+    small = g.copy()
+    small.thumbnail((500, 500))
+    hist = small.histogram()
+    total = sum(hist)
+    acc, thr = 0, 200
+    for v in range(255, -1, -1):            # 가장 밝은 30% 경계
+        acc += hist[v]
+        if acc >= total * 0.30:
+            thr = max(150, v - 25)
+            break
+    mask = small.point(lambda v: 255 if v >= thr else 0).filter(ImageFilter.MinFilter(5))
+    box = _largest_blob(mask)
+    if not box:
+        return im
+    sx, sy = im.width / small.width, im.height / small.height
+    x0, y0, x1, y1 = box[0] * sx, box[1] * sy, box[2] * sx, box[3] * sy
+    area = (x1 - x0) * (y1 - y0) / (im.width * im.height)
+    if not 0.03 < area < 0.40:              # 멀리서 찍어 종이가 작을 때만 자른다(가까운 사진은 그대로)
+        return im
+    mx, my = (x1 - x0) * 0.08, (y1 - y0) * 0.08
+    return im.crop((max(0, int(x0 - mx)), max(0, int(y0 - my)),
+                    min(im.width, int(x1 + mx)), min(im.height, int(y1 + my))))
+
+
 def prepare_file(path):
     """보낼 파일 준비: 피디에프는 그대로, 사진은 어떤 형식이든 1600화소 jpeg 로."""
     ext = path.suffix.lower()
@@ -66,6 +120,7 @@ def prepare_file(path):
         im = ImageOps.exif_transpose(im)
         if im.mode not in ("RGB", "L"):
             im = im.convert("RGB")
+        im = crop_paper(im)
         im.thumbnail((1600, 1600))
         buf = io.BytesIO()
         im.save(buf, format="JPEG", quality=85)
