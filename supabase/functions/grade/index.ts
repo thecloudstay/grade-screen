@@ -18,13 +18,13 @@ Deno.serve(async (req) => {
   const started = Date.now();
   try {
     const config = await loadConfig();
-    const { text, model } = await gradeImage({ img, media, apiKey: env("GRADE_ANTHROPIC_KEY") || env("ANTHROPIC_API_KEY"), config });
+    const { text, model } = await gradeImage({ img, media, apiKey: env("GRADE_ANTHROPIC_KEY") || env("ANTHROPIC_API_KEY"), config, prefer: req.headers.get("x-grade-model") || "" });
     // 기록은 같은 프로젝트 안이라 서비스 열쇠로 바로 저장
     await record({
       url: env("SUPABASE_URL"), key: env("SUPABASE_SERVICE_ROLE_KEY"),
       row: { device, relay: "supabase", model, ms: Date.now() - started, result: text, ...meta(text) },
     });
-    return new Response(text + "\n", { headers: { "content-type": "text/plain; charset=utf-8" } });
+    return new Response(text + "\n", { headers: { "content-type": "text/plain; charset=utf-8", "x-grade-model": model } });
   } catch (e) {
     return new Response("오류: " + ((e as Error)?.message || "알 수 없음") + "\n", {
       status: 502, headers: { "content-type": "text/plain; charset=utf-8" },

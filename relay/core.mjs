@@ -48,11 +48,14 @@ export function checkToken(header, tokensEnv) {
 // 모델·최대 길이·생각 설정·지시문을 바꿀 때 함수를 다시 배포하지 않아도 된다.
 const CONFIG_URL = "https://raw.githubusercontent.com/thecloudstay/grade-screen/main/relay/config.json";
 export const DEFAULT_CONFIG = {
+  // 고급 문제(계산·서술) 정확도를 위해 소넷을 먼저, 생각 기능은 켜 두고 길이를 넉넉히
   models: [
+    { model: "claude-sonnet-5-5", max_tokens: 16000 },
+    { model: "claude-opus-5-5", max_tokens: 16000 },
     // 하이쿠 5.5 는 생각이 기본으로 켜져 있고 그 분량이 최대 길이에 포함된다 → 끄고 넉넉히
     { model: "claude-haiku-5-5", max_tokens: 8000, thinking: { type: "disabled" } },
-    { model: "claude-sonnet-5-5", max_tokens: 8000, thinking: { type: "between_tools" } },
   ],
+  allow_override: ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"],
 };
 let _cfg = null, _cfgAt = 0;
 export async function loadConfig() {
@@ -82,12 +85,18 @@ export function mediaOf(contentType) {
 }
 
 // 모델 목록 순서대로 시도. 혼잡·일시 장애·빈 응답·거절이면 다음 모델로.
-export async function gradeImage({ img, media, apiKey, config }) {
+export async function gradeImage({ img, media, apiKey, config, prefer }) {
   if (!apiKey) throw new Error("인증 열쇠 미설정");
   const cfg = config || DEFAULT_CONFIG;
+  // 시험용: 요청 머리에 모델을 지정하면 그 모델을 먼저 쓴다(허용 목록 안에서만)
+  let list = cfg.models;
+  if (prefer && (cfg.allow_override || []).includes(prefer)) {
+    const hit = list.find((m) => m.model === prefer) || { model: prefer, max_tokens: 16000 };
+    list = [hit, ...list.filter((m) => m.model !== prefer)];
+  }
   const data = toBase64(img);
   let last = "";
-  for (const m of cfg.models) {
+  for (const m of list) {
     for (let attempt = 0; attempt < 2; attempt++) {
       const body = {
         model: m.model,

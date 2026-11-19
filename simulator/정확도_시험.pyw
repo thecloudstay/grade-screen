@@ -123,17 +123,24 @@ def prepare(path):
         return buf.getvalue(), "image/jpeg"
 
 
-def send(cfg, raw, ctype):
+MODELS = [("하이쿠", "claude-haiku-5-5"), ("소넷", "claude-sonnet-5-5")]
+
+
+def send(cfg, raw, ctype, model=""):
     last = ""
     for url in cfg.get("relays", []):
         req = urllib.request.Request(url, data=raw, method="POST", headers={
             "content-type": ctype,
             "x-device-token": cfg.get("token", ""),
             "x-device-id": "accuracy-test",
+            "x-grade-model": model,
         })
         try:
-            with urllib.request.urlopen(req, timeout=180) as r:
+            with urllib.request.urlopen(req, timeout=240) as r:
                 body = r.read().decode("utf-8", "replace").strip()
+                used = r.headers.get("x-grade-model", "")
+                if model and used and used != model:
+                    body = f"[실제 사용 모델: {used}]\n" + body
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", "replace").strip()
         except Exception as e:
@@ -204,63 +211,69 @@ class App:
             self.say("설정.json 이 없습니다.")
             return
         keys = json.loads((SAMPLES / "key.json").read_text(encoding="utf-8"))
-        self.say(f"시험 답안지 {len(keys)}장 — 동시에 3장씩 채점합니다.\n")
+        self.say(f"시험 답안지 {len(keys)}장 × 모델 {len(MODELS)}개(하이쿠·소넷) — 동시에 3장씩 채점합니다.\n")
 
-        def one(fn):
+        def one(job):
+            fn, (mname, mid) = job
             k = keys[fn]
             t0 = time.time()
             try:
                 raw, ctype = prepare(SAMPLES / fn)
-                text = send(cfg, raw, ctype)
+                text = send(cfg, raw, ctype, mid)
                 sec = time.time() - t0
                 (RESULT_DIR / "정확도_원문").mkdir(parents=True, exist_ok=True)
-                (RESULT_DIR / "정확도_원문" / (fn + ".txt")).write_text(text, encoding="utf-8")
+                (RESULT_DIR / "정확도_원문" / f"{mname}_{fn}.txt").write_text(text, encoding="utf-8")
                 if fn.endswith(".pdf"):
                     k = dict(k, items=k["items"])     # 첫 쪽 기준 비교 + 두 쪽 문항 수 점검
                 res = check(fn, k, text)
-                res.update(sec=sec, cond=k.get("condition", ""), title=k.get("title", ""))
+                res.update(sec=sec, cond=k.get("condition", ""), title=k.get("title", ""), model=mname)
                 if fn.endswith(".pdf"):
                     res["pdf_lines"] = len(re.findall(r"^\s*\d+\s*번\s*\|", text, re.M))
-                self.say(f"끝: {fn}  ({sec:.1f}초)  문항 {res['found']}/{res['total']} · "
+                self.say(f"끝: [{mname}] {fn}  ({sec:.1f}초)  문항 {res['found']}/{res['total']} · "
                          f"판정 {res['judge']}/{res['total']} · 정답 {res['ans']}/{res['total']}")
                 return res
             except Exception as e:
-                self.say(f"실패: {fn}  {e}")
-                return dict(file=fn, error=str(e), sec=time.time() - t0,
+                self.say(f"실패: [{mname}] {fn}  {e}")
+                return dict(file=fn, error=str(e), sec=time.time() - t0, model=mname,
                             cond=k.get("condition", ""), title=k.get("title", ""))
 
         with ThreadPoolExecutor(3) as ex:
-            results = list(ex.map(one, list(keys)))
+            jobs = [(fn, m) for m in MODELS for fn in keys]
+            results = list(ex.map(one, jobs))
 
         rep = [f"채점 정확도 시험  {time.strftime('%Y-%m-%d %H:%M')}", ""]
-        tot = dict(total=0, found=0, judge=0, ans=0)
-        secs = []
-        for r in results:
-            rep.append(f"■ {r['file']}  [{r.get('title','')} · {r.get('cond','')}]  {r['sec']:.1f}초")
-            if "error" in r:
-                rep.append(f"  실패: {r['error']}")
-                continue
-            secs.append(r["sec"])
-            for k2 in tot:
-                tot[k2] += r[k2]
-            rep.append(f"  수험번호 {'읽음' if r['exam_no'] else '못 읽음'} · 이름 {'읽음' if r['who'] else '못 읽음'}"
-                       f" · 점수 줄 {r['score'][0]}/{r['score'][1]} (미표기 {r['score'][2]})")
-            if "pdf_lines" in r:
-                rep.append(f"  피디에프 두 쪽 문항 줄 수: {r['pdf_lines']} (기대 12)")
-            rep += r["rows"]
-            rep.append("")
-        if tot["total"]:
-            rep.append("=" * 60)
-            rep.append(f"전체  문항 인식 {tot['found']}/{tot['total']}  ·  "
-                       f"맞음/틀림/미표기 판정 {tot['judge']}/{tot['total']} "
-                       f"({100*tot['judge']/tot['total']:.0f}%)  ·  정답 {tot['ans']}/{tot['total']} "
-                       f"({100*tot['ans']/tot['total']:.0f}%)")
-        if secs:
-            rep.append(f"걸린 시간  평균 {sum(secs)/len(secs):.1f}초 · 최소 {min(secs):.1f}초 · 최대 {max(secs):.1f}초")
+        summary = []
+        for mname, _ in MODELS:
+            tot = dict(total=0, found=0, judge=0, ans=0)
+            secs = []
+            rep.append(f"#### {mname}")
+            for r in [x for x in results if x.get("model") == mname]:
+                rep.append(f"■ {r['file']}  [{r.get('title','')} · {r.get('cond','')}]  {r['sec']:.1f}초")
+                if "error" in r:
+                    rep.append(f"  실패: {r['error']}")
+                    continue
+                secs.append(r["sec"])
+                for k2 in tot:
+                    tot[k2] += r[k2]
+                rep.append(f"  수험번호 {'읽음' if r['exam_no'] else '못 읽음'} · 이름 {'읽음' if r['who'] else '못 읽음'}"
+                           f" · 점수 줄 {r['score'][0]}/{r['score'][1]} (미표기 {r['score'][2]})")
+                if "pdf_lines" in r:
+                    rep.append(f"  피디에프 두 쪽 문항 줄 수: {r['pdf_lines']} (기대 12)")
+                rep += r["rows"]
+                rep.append("")
+            if tot["total"]:
+                line = (f"{mname}  문항 인식 {tot['found']}/{tot['total']} · 판정 {tot['judge']}/{tot['total']} "
+                        f"({100*tot['judge']/tot['total']:.0f}%) · 정답 {tot['ans']}/{tot['total']} "
+                        f"({100*tot['ans']/tot['total']:.0f}%)")
+                if secs:
+                    line += f" · 시간 평균 {sum(secs)/len(secs):.1f}초(최소 {min(secs):.1f}, 최대 {max(secs):.1f})"
+                summary.append(line)
+        rep.append("=" * 60)
+        rep += summary
         out = RESULT_DIR / f"정확도보고_{time.strftime('%Y%m%d_%H%M%S')}.txt"
         RESULT_DIR.mkdir(parents=True, exist_ok=True)
         out.write_text("\n".join(rep), encoding="utf-8")
-        self.say("\n" + "\n".join(rep[-3:]) + f"\n\n보고 파일: {out}")
+        self.say("\n" + "\n".join(summary) + f"\n\n보고 파일: {out}")
 
 
 if __name__ == "__main__":

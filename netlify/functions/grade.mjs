@@ -23,7 +23,7 @@ export default async (req) => {
       const beat = setInterval(() => ctrl.enqueue(enc.encode(" ")), 3000);
       try {
         const config = await loadConfig();
-        const { text, model } = await gradeImage({ img, media, apiKey: env("ANTHROPIC_API_KEY"), config });
+        const { text, model } = await gradeImage({ img, media, apiKey: env("ANTHROPIC_API_KEY"), config, prefer: req.headers.get("x-grade-model") || "" });
         ctrl.enqueue(enc.encode("\n" + text + "\n"));
         await record({
           url: env("SUPABASE_URL"), key: env("SUPABASE_SERVICE_KEY"),
