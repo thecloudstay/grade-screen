@@ -108,6 +108,7 @@ UNM_RE = re.compile(
     r"^\s*(\d+)\s*번\s*\|\s*(?:미표기|내\s*답\s*[:：]\s*(?:없음|미표기|-|—|\(없음\))?)"
     r"\s*\|\s*정답\s*[:：]\s*(.*?)\s*(?:\|\s*[OXox○×-])?\s*(?:\|\s*문항\s*[:：]\s*(.*?))?\s*$"
 )
+FIELD_RE = re.compile(r"\|\s*(식|풀이식|계산식|문항)\s*[:：]\s*([^|]*)")
 NOTE_RE = re.compile(r"^\s*해설\s*(\d+)\s*번\s*[:：]\s*(.*)$")
 SCORE_RE = re.compile(r"점수\s*[:：]\s*(\d+)\s*/\s*(\d+)")
 UNMARK_RE = re.compile(r"미표기\s*(\d+)")
@@ -123,6 +124,7 @@ class Item:
     blank: bool = False   # 내 답 없음(미표기)
     qkey: str = ""        # 문항 첫머리(여러 장 합칠 때 같은 문항인지 가리는 데 씀)
     label: str = ""       # 화면에 쓸 번호(번호가 다시 1번부터 시작하면 「2-1」처럼)
+    calc: str = ""        # 계산 문제의 풀이식(해설을 꺼도 정답과 함께 보여 줌)
 
 
 @dataclass
@@ -149,17 +151,23 @@ def parse(text):
         if not line:
             in_note = False
             continue
+        extra = {}
+        if "번" in line[:6]:
+            for k, v in FIELD_RE.findall(line):
+                extra["문항" if k == "문항" else "식"] = v.strip()
+            line = FIELD_RE.sub("", line).strip()
         m = UNM_RE.match(line)
         if m:
             r.items.append(Item(m.group(1), "", m.group(2), blank=True,
-                                qkey=(m.group(3) or "").strip()))
+                                qkey=extra.get("문항", ""), calc=extra.get("식", "")))
             in_note = False
             continue
         m = ITEM_RE.match(line)
         if m:
             mark = (m.group(4) or "X").upper()
             r.items.append(Item(m.group(1), m.group(2), m.group(3),
-                                ok=mark in ("O", "○"), qkey=(m.group(5) or "").strip()))
+                                ok=mark in ("O", "○"), qkey=extra.get("문항", ""),
+                                calc=extra.get("식", "")))
             in_note = False
             continue
         m = SCORE_RE.search(line)
@@ -281,6 +289,26 @@ def _answer_lines(label, text, col):
     return out
 
 
+def wrap_calc(text, f, width):
+    """풀이식 줄바꿈: 숫자 중간이 아니라 → = × + 같은 기호나 빈칸 뒤에서 끊는다."""
+    toks = [t for t in re.split(r"(?<=[ →=×÷+\-])", text) if t]
+    out, cur = [], ""
+    for t in toks:
+        if tw(cur + t, f) <= width:
+            cur += t
+            continue
+        if cur.strip():
+            out.append(cur.strip())
+        cur = t
+        while tw(cur, f) > width:                # 기호 없이 긴 덩어리는 글자 단위로
+            parts = wrap(cur, f, width)
+            out.extend(p.strip() for p in parts[:-1])
+            cur = parts[-1]
+    if cur.strip():
+        out.append(cur.strip())
+    return out
+
+
 def _pack(lines, limit=BODY_H):
     pages, cur, used = [], [], 0
     for ln in lines:
@@ -316,8 +344,47 @@ def build_pages(r, notes=False):
     left_w = max([tw(f"{i.no}번", nf) for i in items] + [0]) + 8
     room = W - PAD * 2 - 4 - left_w
 
-    rows, details = [], []
+    def detail_pages(it):
+        calc = bool(it.calc and not it.ok)
+        if calc:
+            # 계산 문항: 내 답은 머리줄로 올리고, 본문은 정답(크게) + 풀이식
+            lines = _answer_lines("정답", it.answer, GREEN)
+            if lines[0]["size"] > 18:
+                lines = [dict(lines[0], size=18, h=24)]
+            for size, h in ((15, 19), (13, 16), (11, 14)):
+                cl = wrap_calc(it.calc, font(size, True), W - PAD * 2 - LABEL_W)
+                if sum(l["h"] for l in lines) + h * len(cl) <= BODY_H or size == 11:
+                    break
+            for k, t in enumerate(cl):
+                lines.append(dict(label="식" if k == 0 else "", text=t, col=FG,
+                                  size=size, bold=True, h=h))
+        else:
+            lines = ([] if it.blank else _answer_lines("내 답", it.mine, RED))
+            lines += _answer_lines("정답", it.answer, GREEN)
+        if notes and it.note:
+            for t in wrap(it.note, font(13), W - PAD * 2):
+                lines.append(dict(label=None, text=t, col=FG, size=13,
+                                  bold=False, h=16))
+        chunks = _pack(lines)
+        mine = it.mine if calc and not it.blank else ""
+        return [("detail", {"item": it, "lines": ch, "part": (n + 1, len(chunks)),
+                            "mine": mine})
+                for n, ch in enumerate(chunks)]
+
+    # 문항 순서대로: 일반 문항은 목록 쪽(한 쪽 per줄), 계산 문항(틀림·미표기)은
+    # 정답과 풀이식을 한 쪽에 크게. 해설이 켜져 있으면 해설 쪽은 목록 뒤에 모음.
+    seq, rows, later = [], [], []
+
+    def flush():
+        for k in range(0, len(rows), per):
+            seq.append(("list", {"rows": rows[k:k + per], "h": row_h, "nsize": nsize}))
+        rows.clear()
+
     for it in items:
+        if it.calc and not it.ok:
+            flush()
+            seq.extend(detail_pages(it))
+            continue
         right = (it.answer if it.blank else
                  it.mine if it.ok else f"{it.mine}→{it.answer}")
         size = next((z for z in sizes if tw(right, font(z, True)) <= room), 0)
@@ -325,29 +392,20 @@ def build_pages(r, notes=False):
             rows.append((it, right, size))
         elif it.ok:
             rows.append((it, fit(right, font(sizes[-1], True), room), sizes[-1]))
-        else:
-            rows.append((it, "자세히 ▶", sizes[-1]))
-        if not it.ok and (not size or (notes and it.note)):
-            details.append(it)
+        else:                                # 한 줄에 안 들어가면 그 자리에서 크게 한 쪽
+            flush()
+            seq.extend(detail_pages(it))
+            continue
+        if not it.ok and notes and it.note:
+            later.append(it)
+    flush()
 
-    if not rows:
+    if not seq:
         pages.append(("msg", {"title": "모두 정답", "color": GREEN,
                               "body": "틀린 문항이 없습니다."}))
-    for k in range(0, len(rows), per):
-        pages.append(("list", {"rows": rows[k:k + per], "h": row_h,
-                               "nsize": nsize}))
-
-    for it in details:
-        lines = ([] if it.blank else _answer_lines("내 답", it.mine, RED))
-        lines += _answer_lines("정답", it.answer, GREEN)
-        if notes and it.note:
-            for t in wrap(it.note, font(13), W - PAD * 2):
-                lines.append(dict(label=None, text=t, col=FG, size=13,
-                                  bold=False, h=16))
-        chunks = _pack(lines)
-        for n, ch in enumerate(chunks):
-            pages.append(("detail", {"item": it, "lines": ch,
-                                     "part": (n + 1, len(chunks))}))
+    pages.extend(seq)
+    for it in later:
+        pages.extend(detail_pages(it))
 
     if r.shot and not r.shot.startswith("좋음"):
         tip = {"멀리서": "더 가까이 찍어 주세요", "기울어짐": "정면 위에서 찍어 주세요",
@@ -439,6 +497,8 @@ def draw_detail(d, data, page):
     title = f"{it.label or it.no}번 {kind}"
     if p[1] > 1:
         title += f" ({p[0]}/{p[1]})"
+    if data.get("mine"):
+        title = fit(f"{title} · 내 답 {data['mine']}", font(12, True), W - PAD * 2 - 26)
     _head(d, title, color=YELLOW if it.blank else GREEN if it.ok else RED,
           page=page)
     y = ROW_H
