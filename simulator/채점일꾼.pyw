@@ -124,8 +124,16 @@ def main():
         return
     log("시작")
     fails, pause_until = 0, 0.0
+    me = Path(__file__).resolve()
+    born = me.stat().st_mtime
     while True:
         try:
+            # 이 파일이 새 판으로 바뀌면 스스로 다시 켠다(대표 손 없이 고친 판 반영)
+            if me.stat().st_mtime != born:
+                log("새 판 감지 → 다시 켬")
+                _lock.close()
+                subprocess.Popen([sys.executable, str(me)], creationflags=NO_WINDOW, close_fds=True)
+                return
             standby = time.time() < pause_until
             cfg = config()
             base, token = relay_base(cfg), cfg.get("token", "")

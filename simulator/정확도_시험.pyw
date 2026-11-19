@@ -144,7 +144,7 @@ def send(cfg, raw, ctype, model=""):
         try:
             with urllib.request.urlopen(req, timeout=240) as r:
                 body = r.read().decode("utf-8", "replace").strip()
-                used = r.headers.get("x-grade-model", "")
+                used = urllib.parse.unquote(r.headers.get("x-grade-model", ""))
                 route = urllib.parse.unquote(r.headers.get("x-grade-route", ""))
                 if not model and route:
                     if "토큰" in route:      # 구독 일꾼이 못 받음 → 충전금 쓰기 전에 시험 멈춤

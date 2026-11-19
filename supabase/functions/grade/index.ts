@@ -53,6 +53,7 @@ async function workerResult(req: Request) {
   // 이미 취소된(시간 넘어 클로드 키로 넘어간) 일은 덮어쓰지 않는다
   const n = await setJob({ url, key, id: b.id, patch, onlyStatus: "working" });
   return Response.json({ saved: n > 0 });
+  // 주의: 응답 머리값에는 한글을 그대로 넣을 수 없다(ByteString 오류) → 항상 encodeURIComponent
 }
 
 Deno.serve(async (req) => {
@@ -112,7 +113,7 @@ Deno.serve(async (req) => {
       url, key,
       row: { device, relay: "supabase", model: out.model + " · " + out.route, ms: Date.now() - started, result: out.text, ...meta(out.text) },
     });
-    return txt(out.text + "\n", 200, { "x-grade-model": out.model, "x-grade-route": encodeURIComponent(out.route) });
+    return txt(out.text + "\n", 200, { "x-grade-model": encodeURIComponent(out.model), "x-grade-route": encodeURIComponent(out.route) });
   } catch (e) {
     return txt("오류: " + ((e as Error)?.message || "알 수 없음") + "\n", 502);
   }
