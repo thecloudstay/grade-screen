@@ -7,7 +7,8 @@ const env = (k: string) => Deno.env.get(k);
 Deno.serve(async (req) => {
   if (req.method === "GET") return Response.json({ ok: true, relay: "supabase" });
   if (req.method !== "POST") return new Response("method", { status: 405 });
-  if (!checkToken(req.headers.get("x-device-token"), env("DEVICE_TOKENS"))) {
+  // 집지니 프로젝트에 함께 두므로 비밀값 이름 앞에 GRADE_ 를 붙여 섞이지 않게 한다
+  if (!checkToken(req.headers.get("x-device-token"), env("GRADE_DEVICE_TOKENS") || env("DEVICE_TOKENS"))) {
     return new Response("unauthorized", { status: 401 });
   }
   const img = new Uint8Array(await req.arrayBuffer());
@@ -16,8 +17,8 @@ Deno.serve(async (req) => {
   const device = req.headers.get("x-device-id") || "unknown";
   const started = Date.now();
   try {
-    const models = [env("CLAUDE_MODEL") || "claude-haiku-5-5", env("CLAUDE_MODEL_BACKUP") || "claude-sonnet-5-5"];
-    const { text, model } = await gradeImage({ img, media, apiKey: env("ANTHROPIC_API_KEY"), models });
+    const models = [env("GRADE_MODEL") || "claude-haiku-5-5", env("GRADE_MODEL_BACKUP") || "claude-sonnet-5-5"];
+    const { text, model } = await gradeImage({ img, media, apiKey: env("GRADE_ANTHROPIC_KEY") || env("ANTHROPIC_API_KEY"), models });
     // 기록은 같은 프로젝트 안이라 서비스 열쇠로 바로 저장
     await record({
       url: env("SUPABASE_URL"), key: env("SUPABASE_SERVICE_ROLE_KEY"),
