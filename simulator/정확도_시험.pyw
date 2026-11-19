@@ -178,6 +178,9 @@ def check(fn, key, text):
             ok_ans = hits >= max(1, e.get("need", 1))
         else:
             ok_ans = same(it.answer, e["answer"], e.get("alts", []))
+            # 보기 번호 없이 보기 내용만 쓴 경우: 내용이 맞으면 정답으로 본다
+            if not ok_ans and e.get("answer_text") and not any(c in it.answer for c in CIRC):
+                ok_ans = re.sub(r"\s+", "", e["answer_text"]) in re.sub(r"\s+", "", it.answer)
         n_judge += ok_judge
         n_ans += ok_ans
         flag = "" if ok_judge and ok_ans else "   ← 틀림"

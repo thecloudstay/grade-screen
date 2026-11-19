@@ -18,6 +18,7 @@ export const SYSTEM = [
   "Line 4: 판단: 난이도 <쉬움, 보통, 어려움> | 확신 <높음, 낮음>\n",
   "  (어려움 = multi-step calculation, long written answers or specialist reasoning; ",
   "확신 낮음 = any answer you are not sure of, or marks you could not read clearly)\n",
+  "For multiple-choice questions always write answers as the choice number followed by its text, e.g. ② 10%.\n",
   "Then one line per graded question, in question order:\n",
   "<number>번 | 내 답: <learner answer> | 정답: <correct answer> | <O or X>\n",
   "Then one line per unmarked question:\n",

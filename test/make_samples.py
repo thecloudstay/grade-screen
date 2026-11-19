@@ -178,7 +178,8 @@ def make_sheet(key, title, qs, seed):
                 cx, cy = pos[mine]
                 d.ellipse([cx - 9, cy - 4, cx + 33, cy + 38], outline=(200, 30, 40), width=4)
             y += 58
-            items.append(dict(no=i, mark=mark, mine=mine, answer=correct, alts=[]))
+            items.append(dict(no=i, mark=mark, mine=mine, answer=correct, alts=[],
+                              answer_text=choices[ans - 1]))
         else:
             d.text((112, y), "답 :", font=f(SANS, 25), fill=(35, 35, 35))
             d.line([(170, y + 36), (520, y + 36)], fill=(120, 120, 120), width=1)

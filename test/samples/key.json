@@ -8,14 +8,16 @@
     "mark": "X",
     "mine": "①",
     "answer": "③",
-    "alts": []
+    "alts": [],
+    "answer_text": "5"
    },
    {
     "no": 2,
     "mark": "O",
     "mine": "②",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "10,000원"
    },
    {
     "no": 3,
@@ -36,14 +38,16 @@
     "mark": "O",
     "mine": "②",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "36,000원"
    },
    {
     "no": 6,
     "mark": "O",
     "mine": "④",
     "answer": "④",
-    "alts": []
+    "alts": [],
+    "answer_text": "32"
    }
   ],
   "title": "S-OJT 기초수학 평가",
@@ -59,7 +63,8 @@
     "mark": "-",
     "mine": "",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "10%"
    },
    {
     "no": 2,
@@ -73,28 +78,32 @@
     "mark": "X",
     "mine": "③",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "1.1.~6.30."
    },
    {
     "no": 4,
     "mark": "O",
     "mine": "①",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "가공되지 않은 쌀"
    },
    {
     "no": 5,
     "mark": "X",
     "mine": "④",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "1.1.~12.31."
    },
    {
     "no": 6,
     "mark": "O",
     "mine": "③",
     "answer": "③",
-    "alts": []
+    "alts": [],
+    "answer_text": "3개월"
    }
   ],
   "title": "세무 기초 (세무사 1차 유형)",
@@ -110,7 +119,8 @@
     "mark": "O",
     "mine": "③",
     "answer": "③",
-    "alts": []
+    "alts": [],
+    "answer_text": "자본"
    },
    {
     "no": 2,
@@ -124,7 +134,8 @@
     "mark": "O",
     "mine": "①",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "유동자산"
    },
    {
     "no": 4,
@@ -138,14 +149,16 @@
     "mark": "X",
     "mine": "①",
     "answer": "③",
-    "alts": []
+    "alts": [],
+    "answer_text": "자산의 증가"
    },
    {
     "no": 6,
     "mark": "O",
     "mine": "②",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "선입선출법"
    }
   ],
   "title": "회계원리 (회계사·전산회계 유형)",
@@ -161,7 +174,8 @@
     "mark": "X",
     "mine": "④",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "VMI"
    },
    {
     "no": 2,
@@ -175,21 +189,24 @@
     "mark": "-",
     "mine": "",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "채찍효과"
    },
    {
     "no": 4,
     "mark": "X",
     "mine": "③",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "TEU"
    },
    {
     "no": 5,
     "mark": "O",
     "mine": "②",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "품목 수가 적고 금액이 크다"
    },
    {
     "no": 6,
@@ -212,14 +229,16 @@
     "mark": "O",
     "mine": "④",
     "answer": "④",
-    "alts": []
+    "alts": [],
+    "answer_text": "금전채권"
    },
    {
     "no": 2,
     "mark": "X",
     "mine": "①",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "3.3058"
    },
    {
     "no": 3,
@@ -233,14 +252,16 @@
     "mark": "O",
     "mine": "②",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "주택의 인도와 주민등록"
    },
    {
     "no": 5,
     "mark": "O",
     "mine": "①",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "대지면적에 대한 건축면적의 비율"
    },
    {
     "no": 6,
@@ -263,7 +284,8 @@
     "mark": "X",
     "mine": "②",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "해당 물품의 거래가격"
    },
    {
     "no": 2,
@@ -277,28 +299,32 @@
     "mark": "O",
     "mine": "②",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "6자리"
    },
    {
     "no": 4,
     "mark": "X",
     "mine": "①",
     "answer": "④",
-    "alts": []
+    "alts": [],
+    "answer_text": "일반창고"
    },
    {
     "no": 5,
     "mark": "O",
     "mine": "①",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "수입화주"
    },
    {
     "no": 6,
     "mark": "-",
     "mine": "",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "수입신고 당시의 성질과 수량"
    }
   ],
   "title": "관세법 (관세사 유형)",
@@ -314,14 +340,16 @@
     "mark": "X",
     "mine": "④",
     "answer": "③",
-    "alts": []
+    "alts": [],
+    "answer_text": "28일"
    },
    {
     "no": 2,
     "mark": "O",
     "mine": "②",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "인장력"
    },
    {
     "no": 3,
@@ -335,14 +363,16 @@
     "mark": "X",
     "mine": "④",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "190×90×57"
    },
    {
     "no": 5,
     "mark": "O",
     "mine": "①",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "초기강도가 커진다"
    },
    {
     "no": 6,
@@ -368,7 +398,8 @@
     "mark": "-",
     "mine": "",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "10%"
    },
    {
     "no": 2,
@@ -382,28 +413,32 @@
     "mark": "X",
     "mine": "③",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "1.1.~6.30."
    },
    {
     "no": 4,
     "mark": "O",
     "mine": "①",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "가공되지 않은 쌀"
    },
    {
     "no": 5,
     "mark": "X",
     "mine": "④",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "1.1.~12.31."
    },
    {
     "no": 6,
     "mark": "O",
     "mine": "③",
     "answer": "③",
-    "alts": []
+    "alts": [],
+    "answer_text": "3개월"
    }
   ],
   "items_page2": [
@@ -412,7 +447,8 @@
     "mark": "O",
     "mine": "③",
     "answer": "③",
-    "alts": []
+    "alts": [],
+    "answer_text": "자본"
    },
    {
     "no": 2,
@@ -426,7 +462,8 @@
     "mark": "O",
     "mine": "①",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "유동자산"
    },
    {
     "no": 4,
@@ -440,14 +477,16 @@
     "mark": "X",
     "mine": "①",
     "answer": "③",
-    "alts": []
+    "alts": [],
+    "answer_text": "자산의 증가"
    },
    {
     "no": 6,
     "mark": "O",
     "mine": "②",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "선입선출법"
    }
   ],
   "exam_no": "2026-0014",
@@ -462,7 +501,8 @@
     "mark": "O",
     "mine": "③",
     "answer": "③",
-    "alts": []
+    "alts": [],
+    "answer_text": "자본"
    },
    {
     "no": 2,
@@ -476,7 +516,8 @@
     "mark": "O",
     "mine": "①",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "유동자산"
    },
    {
     "no": 4,
@@ -490,14 +531,16 @@
     "mark": "X",
     "mine": "①",
     "answer": "③",
-    "alts": []
+    "alts": [],
+    "answer_text": "자산의 증가"
    },
    {
     "no": 6,
     "mark": "O",
     "mine": "②",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "선입선출법"
    }
   ],
   "title": "회계원리 (회계사·전산회계 유형)",
@@ -513,7 +556,8 @@
     "mark": "X",
     "mine": "②",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "해당 물품의 거래가격"
    },
    {
     "no": 2,
@@ -527,28 +571,32 @@
     "mark": "O",
     "mine": "②",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "6자리"
    },
    {
     "no": 4,
     "mark": "X",
     "mine": "①",
     "answer": "④",
-    "alts": []
+    "alts": [],
+    "answer_text": "일반창고"
    },
    {
     "no": 5,
     "mark": "O",
     "mine": "①",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "수입화주"
    },
    {
     "no": 6,
     "mark": "-",
     "mine": "",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "수입신고 당시의 성질과 수량"
    }
   ],
   "title": "관세법 (관세사 유형)",
@@ -564,14 +612,16 @@
     "mark": "X",
     "mine": "①",
     "answer": "③",
-    "alts": []
+    "alts": [],
+    "answer_text": "5"
    },
    {
     "no": 2,
     "mark": "O",
     "mine": "②",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "10,000원"
    },
    {
     "no": 3,
@@ -592,14 +642,16 @@
     "mark": "O",
     "mine": "②",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "36,000원"
    },
    {
     "no": 6,
     "mark": "O",
     "mine": "④",
     "answer": "④",
-    "alts": []
+    "alts": [],
+    "answer_text": "32"
    }
   ],
   "title": "S-OJT 기초수학 평가",
@@ -615,14 +667,16 @@
     "mark": "O",
     "mine": "④",
     "answer": "④",
-    "alts": []
+    "alts": [],
+    "answer_text": "금전채권"
    },
    {
     "no": 2,
     "mark": "X",
     "mine": "①",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "3.3058"
    },
    {
     "no": 3,
@@ -636,14 +690,16 @@
     "mark": "O",
     "mine": "②",
     "answer": "②",
-    "alts": []
+    "alts": [],
+    "answer_text": "주택의 인도와 주민등록"
    },
    {
     "no": 5,
     "mark": "O",
     "mine": "①",
     "answer": "①",
-    "alts": []
+    "alts": [],
+    "answer_text": "대지면적에 대한 건축면적의 비율"
    },
    {
     "no": 6,
