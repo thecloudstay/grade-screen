@@ -97,10 +97,10 @@ static void sendPacket(uint8_t type, uint16_t id, uint8_t part, uint8_t total, c
   esp_now_send(bc, (const uint8_t*)&p, offsetof(GlPacket, payload) + p.len);
 }
 
+// 상태는 화면 장치가 3초마다 잠깐 깨어 듣기 때문에 3.5초 동안 촘촘히 반복
 static void sendStatus(const char* msg) {
-  sendPacket(GL_STATUS, 0, 0, 1, msg, strlen(msg));
-  delay(15);
-  sendPacket(GL_STATUS, 0, 0, 1, msg, strlen(msg));
+  uint32_t t0 = millis();
+  while (millis() - t0 < 3500) { sendPacket(GL_STATUS, 0, 0, 1, msg, strlen(msg)); delay(25); }
 }
 
 // 결과 글을 조각내 보내고, 화면 장치가 「다 받음」 할 때까지 반복(화면 장치는 2초마다 잠깐 깨어 들음)
