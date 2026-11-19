@@ -41,48 +41,77 @@ export function checkToken(header, tokensEnv) {
   return list.length > 0 && list.includes((header || "").trim());
 }
 
-// 모델 목록 순서대로 시도. 혼잡·일시 장애면 잠시 뒤 재시도 → 다음 모델.
-export async function gradeImage({ img, media, apiKey, models }) {
+// 실행 중 설정: 깃허브의 relay/config.json 을 5분마다 읽는다.
+// 모델·최대 길이·생각 설정·지시문을 바꿀 때 함수를 다시 배포하지 않아도 된다.
+const CONFIG_URL = "https://raw.githubusercontent.com/thecloudstay/grade-screen/main/relay/config.json";
+export const DEFAULT_CONFIG = {
+  models: [
+    // 하이쿠 5.5 는 생각이 기본으로 켜져 있고 그 분량이 최대 길이에 포함된다 → 끄고 넉넉히
+    { model: "claude-haiku-5-5", max_tokens: 8000, thinking: { type: "disabled" } },
+    { model: "claude-sonnet-5-5", max_tokens: 8000, thinking: { type: "between_tools" } },
+  ],
+};
+let _cfg = null, _cfgAt = 0;
+export async function loadConfig() {
+  if (_cfg && Date.now() - _cfgAt < 300000) return _cfg;
+  try {
+    const r = await fetch(CONFIG_URL, { signal: AbortSignal.timeout(3000) });
+    if (r.ok) { _cfg = { ...DEFAULT_CONFIG, ...(await r.json()) }; _cfgAt = Date.now(); return _cfg; }
+  } catch (_) { /* 못 읽으면 기본값 */ }
+  return _cfg || DEFAULT_CONFIG;
+}
+
+// 사진(jpeg·png·gif·webp)은 그림 칸, 피디에프는 문서 칸으로 보낸다
+export function fileBlock(media, data) {
+  if (media === "application/pdf") {
+    return { type: "document", source: { type: "base64", media_type: media, data } };
+  }
+  return { type: "image", source: { type: "base64", media_type: media, data } };
+}
+
+export function mediaOf(contentType) {
+  const c = (contentType || "").toLowerCase();
+  if (c.includes("pdf")) return "application/pdf";
+  if (c.includes("png")) return "image/png";
+  if (c.includes("webp")) return "image/webp";
+  if (c.includes("gif")) return "image/gif";
+  return "image/jpeg";
+}
+
+// 모델 목록 순서대로 시도. 혼잡·일시 장애·빈 응답·거절이면 다음 모델로.
+export async function gradeImage({ img, media, apiKey, config }) {
   if (!apiKey) throw new Error("인증 열쇠 미설정");
+  const cfg = config || DEFAULT_CONFIG;
   const data = toBase64(img);
   let last = "";
-  for (const model of models) {
+  for (const m of cfg.models) {
     for (let attempt = 0; attempt < 2; attempt++) {
+      const body = {
+        model: m.model,
+        max_tokens: m.max_tokens || 8000,
+        system: cfg.system || SYSTEM,
+        messages: [{ role: "user", content: [fileBlock(media, data), { type: "text", text: cfg.user || USER }] }],
+      };
+      if (m.thinking) body.thinking = m.thinking;
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: 3000,
-          system: SYSTEM,
-          messages: [{
-            role: "user",
-            content: [
-              { type: "image", source: { type: "base64", media_type: media, data } },
-              { type: "text", text: USER },
-            ],
-          }],
-        }),
+        headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        body: JSON.stringify(body),
       });
       if (r.ok) {
         const j = await r.json();
-        const text = (j.content || [])
-          .filter((b) => b.type === "text")
-          .map((b) => b.text)
-          .join("\n")
-          .trim();
-        return { text, model };
+        const text = (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+        if (text) return { text, model: m.model, stop: j.stop_reason };
+        last = "빈 응답(" + (j.stop_reason || "?") + ")";
+        break;                       // 같은 모델로 다시 해도 같으니 다음 모델로
       }
-      last = String(r.status);
-      if (!RETRY.has(r.status)) throw new Error("채점 요청 실패 " + r.status);
+      const err = await r.text().catch(() => "");
+      last = r.status + " " + err.slice(0, 120);
+      if (!RETRY.has(r.status)) break;   // 요청 형식 문제면 다음 모델로
       await new Promise((ok) => setTimeout(ok, 1500 * (attempt + 1)));
     }
   }
-  throw new Error("채점 서버 혼잡 " + last);
+  throw new Error("채점 실패: " + last);
 }
 
 // 결과 글에서 기록용 숫자만 뽑는다.

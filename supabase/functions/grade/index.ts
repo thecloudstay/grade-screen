@@ -1,6 +1,6 @@
 // 예비 중계(슈퍼베이스). 넷리파이가 3초 안에 응답하지 않으면 모듈이 여기로 보낸다.
 // _shared/core.mjs 는 배포할 때 relay/core.mjs 를 복사해 넣는다(깃허브 작업).
-import { checkToken, gradeImage, meta, record } from "../_shared/core.mjs";
+import { checkToken, gradeImage, loadConfig, mediaOf, meta, record } from "../_shared/core.mjs";
 
 const env = (k: string) => Deno.env.get(k);
 
@@ -12,13 +12,13 @@ Deno.serve(async (req) => {
     return new Response("unauthorized", { status: 401 });
   }
   const img = new Uint8Array(await req.arrayBuffer());
-  if (img.length < 1000 || img.length > 5_000_000) return new Response("bad image", { status: 400 });
-  const media = (req.headers.get("content-type") || "").includes("png") ? "image/png" : "image/jpeg";
+  if (img.length < 1000 || img.length > 25_000_000) return new Response("bad image", { status: 400 });
+  const media = mediaOf(req.headers.get("content-type"));
   const device = req.headers.get("x-device-id") || "unknown";
   const started = Date.now();
   try {
-    const models = [env("GRADE_MODEL") || "claude-haiku-5-5", env("GRADE_MODEL_BACKUP") || "claude-sonnet-5-5"];
-    const { text, model } = await gradeImage({ img, media, apiKey: env("GRADE_ANTHROPIC_KEY") || env("ANTHROPIC_API_KEY"), models });
+    const config = await loadConfig();
+    const { text, model } = await gradeImage({ img, media, apiKey: env("GRADE_ANTHROPIC_KEY") || env("ANTHROPIC_API_KEY"), config });
     // 기록은 같은 프로젝트 안이라 서비스 열쇠로 바로 저장
     await record({
       url: env("SUPABASE_URL"), key: env("SUPABASE_SERVICE_ROLE_KEY"),

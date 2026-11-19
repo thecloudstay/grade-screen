@@ -10,7 +10,7 @@ from pathlib import Path
 OUT_DIR = Path.home() / "grade_results"
 API_URL = "https://api.anthropic.com/v1/messages"
 MODEL = os.environ.get("CLAUDE_MODEL", "claude-haiku-5-5")
-MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "3000"))
+MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "8000"))
 MAX_BYTES = 3_500_000
 MAX_SIDE = 1600
 
@@ -68,14 +68,28 @@ TYPES = {
     ".jpeg": "image/jpeg",
     ".webp": "image/webp",
     ".png": "image/png",
+    ".gif": "image/gif",
+    ".pdf": "application/pdf",
 }
+CONVERT = (".bmp", ".tif", ".tiff", ".heic", ".heif")   # 사진 형식이지만 jpeg 로 바꿔 보냄
 
 
 def load_image(path: Path) -> tuple[str, str]:
-    media = TYPES.get(path.suffix.lower())
+    ext = path.suffix.lower()
+    media = TYPES.get(ext)
+    raw = path.read_bytes()
+    if ext in CONVERT:
+        if ext in (".heic", ".heif"):
+            try:
+                import pillow_heif
+                pillow_heif.register_heif_opener()
+            except ImportError as exc:
+                raise RuntimeError("install pillow-heif for heic photos") from exc
+        return base64.b64encode(shrink(raw)).decode("ascii"), "image/jpeg"
     if not media:
         raise RuntimeError("unsupported image type")
-    raw = path.read_bytes()
+    if media == "application/pdf":
+        return base64.b64encode(raw).decode("ascii"), media
     if len(raw) > MAX_BYTES:
         raw = shrink(raw)
         media = "image/jpeg"
@@ -111,7 +125,7 @@ def grade(path: Path, full: bool) -> str:
     b64_data, media = load_image(path)
     system = COMMON + (FULL if full else BRIEF) + TAIL
     image_block = {
-        "type": "image",
+        "type": "document" if media == "application/pdf" else "image",
         "source": {
             "type": "base64",
             "media_type": media,
@@ -122,6 +136,8 @@ def grade(path: Path, full: bool) -> str:
     payload = {
         "model": MODEL,
         "max_tokens": MAX_TOKENS,
+        # 하이쿠 5.5 는 생각이 기본으로 켜져 최대 길이를 다 써 버릴 수 있어 끈다
+        "thinking": {"type": "disabled"},
         "system": system,
         "messages": [
             {

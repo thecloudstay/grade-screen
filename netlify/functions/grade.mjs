@@ -1,6 +1,6 @@
 // 주 중계(넷리파이). 모듈 → 여기 → 클로드 → 모듈.
 // 클로드가 쓰는 동안 몇 초마다 빈칸을 흘려 보내 연결이 끊기지 않게 한다(흘려 보내기 응답).
-import { checkToken, gradeImage, meta, record } from "../../relay/core.mjs";
+import { checkToken, gradeImage, loadConfig, mediaOf, meta, record } from "../../relay/core.mjs";
 
 export const config = { path: "/api/grade" };
 const enc = new TextEncoder();
@@ -13,8 +13,8 @@ export default async (req) => {
     return new Response("unauthorized", { status: 401 });
   }
   const img = new Uint8Array(await req.arrayBuffer());
-  if (img.length < 1000 || img.length > 5_000_000) return new Response("bad image", { status: 400 });
-  const media = (req.headers.get("content-type") || "").includes("png") ? "image/png" : "image/jpeg";
+  if (img.length < 1000 || img.length > 25_000_000) return new Response("bad image", { status: 400 });
+  const media = mediaOf(req.headers.get("content-type"));
   const device = req.headers.get("x-device-id") || "unknown";
   const started = Date.now();
 
@@ -22,9 +22,8 @@ export default async (req) => {
     async start(ctrl) {
       const beat = setInterval(() => ctrl.enqueue(enc.encode(" ")), 3000);
       try {
-        const models = [env("CLAUDE_MODEL") || "claude-haiku-5-5",
-                        env("CLAUDE_MODEL_BACKUP") || "claude-sonnet-5-5"];
-        const { text, model } = await gradeImage({ img, media, apiKey: env("ANTHROPIC_API_KEY"), models });
+        const config = await loadConfig();
+        const { text, model } = await gradeImage({ img, media, apiKey: env("ANTHROPIC_API_KEY"), config });
         ctrl.enqueue(enc.encode("\n" + text + "\n"));
         await record({
           url: env("SUPABASE_URL"), key: env("SUPABASE_SERVICE_KEY"),

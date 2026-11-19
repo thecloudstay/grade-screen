@@ -29,7 +29,47 @@ RESULT_DIR = Path.home() / "grade_results"
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 PORT = 8765
 PHONE_DIR = RESULT_DIR / "phone_inbox"
-IMG_EXT = (".jpg", ".jpeg", ".png", ".webp")
+IMG_EXT = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff",
+           ".heic", ".heif", ".pdf")
+
+
+def log_relay(name, state, detail=""):
+    """중계 응답을 짧게 기록해 원인 추적에 쓴다."""
+    try:
+        RESULT_DIR.mkdir(parents=True, exist_ok=True)
+        with open(RESULT_DIR / "중계기록.txt", "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%m-%d %H:%M:%S')}\t{name}\t{state}\t"
+                    f"{detail.replace(chr(10), ' / ')}\n")
+    except Exception:
+        pass
+
+
+def prepare_file(path):
+    """보낼 파일 준비: 피디에프는 그대로, 사진은 어떤 형식이든 1600화소 jpeg 로."""
+    ext = path.suffix.lower()
+    if ext == ".pdf":
+        return path.read_bytes(), "application/pdf"
+    from PIL import Image, ImageOps
+    if ext in (".heic", ".heif"):
+        ensure("pillow_heif", "pillow-heif")
+        try:
+            import pillow_heif
+            pillow_heif.register_heif_opener()
+        except Exception:
+            pass
+    import io
+    with Image.open(path) as im:
+        try:
+            im.seek(0)                      # 여러 장(움직이는 그림·여러 쪽 tif)은 첫 장
+        except Exception:
+            pass
+        im = ImageOps.exif_transpose(im)
+        if im.mode not in ("RGB", "L"):
+            im = im.convert("RGB")
+        im.thumbnail((1600, 1600))
+        buf = io.BytesIO()
+        im.save(buf, format="JPEG", quality=85)
+        return buf.getvalue(), "image/jpeg"
 
 
 def lan_ip():
@@ -406,7 +446,8 @@ class App:
             return
         p = filedialog.askopenfilename(
             title="채점할 사진 고르기",
-            filetypes=[("사진", "*.jpg *.jpeg *.png *.webp"), ("모든 파일", "*.*")])
+            filetypes=[("사진·문서", "*.jpg *.jpeg *.png *.webp *.gif *.bmp *.tif *.tiff *.heic *.heif *.pdf"),
+                       ("모든 파일", "*.*")])
         if not p:
             return
         self.jobs.put(Path(p))
@@ -442,15 +483,11 @@ class App:
         relays = cfg.get("relays") or []
         last = ""
         if relays:
-            raw = path.read_bytes()
-            try:
-                raw = G.shrink(raw)          # 장치와 같게 1600화소 사진으로 줄여 보냄
-            except Exception:
-                pass
+            raw, ctype = prepare_file(path)
             for url in relays:
                 name = "슈퍼베이스" if "supabase" in url else "넷리파이" if "netlify" in url else "중계"
                 req = urllib.request.Request(url, data=raw, method="POST", headers={
-                    "content-type": "image/jpeg",
+                    "content-type": ctype,
                     "x-device-token": cfg.get("token", ""),
                     "x-device-id": cfg.get("device_id", "simulator"),
                 })
@@ -463,6 +500,11 @@ class App:
                         raise RuntimeError("장치 암호가 맞지 않습니다")
                 except Exception as e:
                     last = f"{name} 연결 실패"
+                    log_relay(name, "연결 실패", str(e))
+                    continue
+                log_relay(name, f"{len(body)}자", body[:200])
+                if not body:
+                    last = f"{name} 빈 응답"
                     continue
                 if body.startswith("오류"):
                     last = f"{name} {body}"
