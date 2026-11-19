@@ -129,7 +129,7 @@ def prepare(path):
 
 # 대표 결정(2026-11-19): 시험도 구독형으로만(충전금 보호). 모델 지정 없이 보내면 중계기가 구독형으로 보냄
 MODELS = [("구독", "")]
-STOP = {"why": ""}
+STOP = {"why": "", "fails": 0}
 
 
 def send(cfg, raw, ctype, model=""):
@@ -256,11 +256,15 @@ class App:
                 res.update(sec=sec, cond=k.get("condition", ""), title=k.get("title", ""), model=mname)
                 if fn.endswith(".pdf"):
                     res["pdf_lines"] = len(re.findall(r"^\s*\d+\s*번\s*\|", text, re.M))
+                STOP["fails"] = 0
                 self.say(f"끝: [{mname}] {fn}  ({sec:.1f}초)  문항 {res['found']}/{res['total']} · "
                          f"판정 {res['judge']}/{res['total']} · 정답 {res['ans']}/{res['total']}")
                 return res
             except Exception as e:
                 self.say(f"실패: [{mname}] {fn}  {e}")
+                STOP["fails"] += 1
+                if STOP["fails"] >= 2:    # 연달아 두 번 실패하면 남은 장은 돌리지 않음
+                    STOP["why"] = "연달아 두 장 실패해 시험을 멈췄습니다(채점일꾼 기록 확인 필요)."
                 return dict(file=fn, error=str(e), sec=time.time() - t0, model=mname,
                             cond=k.get("condition", ""), title=k.get("title", ""))
 
