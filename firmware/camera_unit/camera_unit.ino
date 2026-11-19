@@ -24,6 +24,8 @@
 #include <LittleFS.h>
 #include <vector>
 #include <algorithm>
+#include <WebServer.h>
+#include <Preferences.h>
 #include "config.h"
 #include "grade_link.h"
 #if USE_OV5640_AF
@@ -39,8 +41,22 @@ RTC_DATA_ATTR uint16_t rtcResultId = 0;    // 결과 번호
 RTC_DATA_ATTR uint8_t rtcBootFails = 0;    // 연속 비정상 재시작 횟수(3번이면 안전 모드)
 
 struct WifiCred { const char* ssid; const char* pass; };
-static const WifiCred WIFI[] = WIFI_LIST;
-static const int WIFI_N = sizeof(WIFI) / sizeof(WIFI[0]);
+static const WifiCred WIFI_DEFAULT[] = WIFI_LIST;
+// 시험장에서 휴대폰으로 추가한 와이파이(최대 5개) + 기본 목록. 추가한 것이 먼저.
+struct WifiSaved { String ssid, pass; };
+static WifiSaved WIFI[10];
+static int WIFI_N = 0;
+
+static void loadWifiList() {
+  Preferences p;
+  p.begin("wifi", true);
+  for (int i = 0; i < 5; i++) {
+    String s = p.getString(("s" + String(i)).c_str(), "");
+    if (s.length()) { WIFI[WIFI_N].ssid = s; WIFI[WIFI_N].pass = p.getString(("p" + String(i)).c_str(), ""); WIFI_N++; }
+  }
+  p.end();
+  for (auto& d : WIFI_DEFAULT) if (WIFI_N < 10) { WIFI[WIFI_N].ssid = d.ssid; WIFI[WIFI_N].pass = d.pass; WIFI_N++; }
+}
 
 static volatile bool gotAck = false;
 static volatile uint16_t ackId = 0;
@@ -197,14 +213,14 @@ static bool wifiConnect() {
   WiFi.setSleep(true);   // 기다리는 동안 절전
   // 1) 지난번 와이파이·채널로 빠른 재접속
   if (rtcWifiIdx >= 0 && rtcWifiIdx < WIFI_N && rtcChannel) {
-    WiFi.begin(WIFI[rtcWifiIdx].ssid, WIFI[rtcWifiIdx].pass, rtcChannel, rtcBssid, true);
+    WiFi.begin(WIFI[rtcWifiIdx].ssid.c_str(), WIFI[rtcWifiIdx].pass.c_str(), rtcChannel, rtcBssid, true);
     uint32_t t0 = millis();
     while (millis() - t0 < 4000) { if (WiFi.isConnected()) return true; delay(50); }
     WiFi.disconnect();
   }
   // 2) 목록 순서대로(도시락 → 핫스팟)
   for (int i = 0; i < WIFI_N; i++) {
-    WiFi.begin(WIFI[i].ssid, WIFI[i].pass);
+    WiFi.begin(WIFI[i].ssid.c_str(), WIFI[i].pass.c_str());
     uint32_t t0 = millis();
     while (millis() - t0 < WIFI_TRY_MS) {
       if (WiFi.isConnected()) {
@@ -247,6 +263,51 @@ static int postPhoto(const String& path, String& out) {
   return code;
 }
 
+// ───────────────────────── 와이파이 설정 모드(시험장에서 휴대폰으로) ─────────────────────────
+// 촬영 단추를 8초 누르고 있으면 장치가 스스로 「채점장치-설정」 와이파이를 띄운다.
+// 휴대폰으로 그 와이파이(비밀번호 12345678)에 붙어 주소창에 192.168.4.1 → 이름·비밀번호 입력 → 저장.
+// 와이파이 도시락 이름이 바뀌어도, 새 핫스팟이어도 장치 프로그램을 다시 올릴 필요가 없다. 5분 지나면 저절로 끝.
+static void setupMode() {
+  WiFi.mode(WIFI_AP_STA);   // 설정 화면(공유기) + 화면 장치 무선 알림을 함께
+  WiFi.softAP("채점장치-설정", "12345678", rtcChannel ? rtcChannel : 1);
+  linkStart();
+  sendStatus("설정 모드 · 휴대폰으로 「채점장치-설정」 접속 → 192.168.4.1");
+  WebServer web(80);
+  web.on("/", [&]() {
+    Preferences p; p.begin("wifi", true);
+    String rows;
+    for (int i = 0; i < 5; i++) {
+      String s = p.getString(("s" + String(i)).c_str(), "");
+      rows += "<p>" + String(i + 1) + ". 이름 <input name=s" + String(i) + " value='" + s +
+              "'> 비밀번호 <input name=p" + String(i) + " type=password placeholder='(그대로 두면 유지)'></p>";
+    }
+    p.end();
+    web.send(200, "text/html; charset=utf-8",
+             "<meta name=viewport content='width=device-width'><h3>채점 장치 와이파이</h3>"
+             "<form method=post action=/save>" + rows + "<button>저장</button></form>"
+             "<p>먼저 적은 순서대로 붙습니다. 비우면 그 칸은 지웁니다.</p>");
+  });
+  web.on("/save", HTTP_POST, [&]() {
+    Preferences p; p.begin("wifi", false);
+    for (int i = 0; i < 5; i++) {
+      String s = web.arg("s" + String(i)), pw = web.arg("p" + String(i));
+      s.trim();
+      if (!s.length()) { p.remove(("s" + String(i)).c_str()); p.remove(("p" + String(i)).c_str()); continue; }
+      p.putString(("s" + String(i)).c_str(), s);
+      if (pw.length()) p.putString(("p" + String(i)).c_str(), pw);
+    }
+    p.end();
+    rtcWifiIdx = -1;   // 다음엔 새 목록으로 찾음
+    web.send(200, "text/html; charset=utf-8", "<h3>저장했습니다. 장치가 곧 잠듭니다.</h3>");
+    delay(1500);
+    goSleep(false);
+  });
+  web.begin();
+  uint32_t t0 = millis();
+  while (millis() - t0 < 300000) { web.handleClient(); esp_task_wdt_reset(); delay(5); }
+  goSleep(false);
+}
+
 // ───────────────────────── 본 흐름 ─────────────────────────
 void setup() {
   pinMode(PIN_LED, OUTPUT);
@@ -268,6 +329,7 @@ void setup() {
     }
   }
   if (!LittleFS.begin(true)) blink(5, 50);
+  loadWifiList();
   LittleFS.mkdir("/q");
 
   bool byButton = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0 ||
@@ -275,7 +337,8 @@ void setup() {
   if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0) {
     // 길게 누름 = 새 학생(여러 장 합치기 끊기)
     uint32_t t0 = millis();
-    while (digitalRead(PIN_SHUTTER) == LOW && millis() - t0 < 3000) delay(10);
+    while (digitalRead(PIN_SHUTTER) == LOW && millis() - t0 < 9000) delay(10);
+    if (millis() - t0 >= 8000) { blink(5, 60); setupMode(); }
     if (millis() - t0 >= LONG_PRESS_MS) {
       blink(2, 80);
       linkStart();
