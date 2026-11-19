@@ -63,6 +63,8 @@ export const DEFAULT_CONFIG = {
   // 대표 결정(2026-11-19): 하이쿠는 오답률이 높아 쓰지 않는다. 소넷 기본, 오퍼스 예비.
   allow_override: ["claude-sonnet-5-5", "claude-opus-5-5"],
   route: null,
+  // 대표 결정(2026-11-19): 기본은 구독형(대표 컴퓨터가 채점), 컴퓨터가 꺼져 있으면 클로드 키
+  queue: { enabled: true, alive_sec: 45, pick_sec: 15, wait_sec: 80, api_fallback: true, worker_model: "sonnet" },
 };
 
 export function needsEscalation(text, words) {
@@ -187,4 +189,80 @@ export async function record({ url, key, row }) {
       body: JSON.stringify(row),
     });
   } catch (_) { /* 기록 실패는 무시 */ }
+}
+
+
+// ───────── 구독형 채점 대기열 ─────────
+// 중계기는 사진을 grade_jobs 에 넣고, 대표 컴퓨터의 「채점일꾼」이 집어 가 정액 구독 클로드로 채점한다.
+function sbHeaders(key, extra = {}) {
+  return { apikey: key, Authorization: `Bearer ${key}`, "content-type": "application/json", ...extra };
+}
+
+// standby=true 면 「쉬는 중」(구독 한도 등으로 물러난) 일꾼도 켜진 것으로 본다
+export async function workerAlive({ url, key, sec, standby }) {
+  const since = new Date(Date.now() - sec * 1000).toISOString();
+  const only = standby ? "" : "&note=is.null";
+  const r = await fetch(`${url}/rest/v1/grade_workers?select=id&last_seen=gte.${since}${only}&limit=1`,
+    { headers: sbHeaders(key) });
+  return r.ok && (await r.json()).length > 0;
+}
+
+export async function heartbeat({ url, key, worker, note }) {
+  await fetch(`${url}/rest/v1/grade_workers?on_conflict=id`, {
+    method: "POST",
+    headers: sbHeaders(key, { Prefer: "resolution=merge-duplicates,return=minimal" }),
+    body: JSON.stringify({ id: worker, last_seen: new Date().toISOString(), note: note || null }),
+  });
+}
+
+export async function enqueue({ url, key, img, media, device, rescue }) {
+  const r = await fetch(`${url}/rest/v1/grade_jobs`, {
+    method: "POST",
+    headers: sbHeaders(key, { Prefer: "return=representation" }),
+    body: JSON.stringify({ device, media, img_b64: toBase64(img), rescue: !!rescue }),
+  });
+  if (!r.ok) throw new Error("대기열 넣기 실패 " + r.status);
+  return (await r.json())[0].id;
+}
+
+async function jobRow({ url, key, id }) {
+  const r = await fetch(`${url}/rest/v1/grade_jobs?select=status,result,model,error&id=eq.${id}`,
+    { headers: sbHeaders(key) });
+  return r.ok ? (await r.json())[0] : null;
+}
+
+export async function setJob({ url, key, id, patch, onlyStatus }) {
+  const cond = onlyStatus ? `&status=eq.${onlyStatus}` : "";
+  const r = await fetch(`${url}/rest/v1/grade_jobs?id=eq.${id}${cond}`, {
+    method: "PATCH", headers: sbHeaders(key, { Prefer: "return=representation" }),
+    body: JSON.stringify(patch),
+  });
+  return r.ok ? (await r.json()).length : 0;
+}
+
+// 결과를 기다린다. pick_sec 안에 아무도 안 집어 가거나, 일꾼이 실패하거나, wait_sec 이 넘으면 null
+export async function waitJob({ url, key, id, pickSec, waitSec }) {
+  const start = Date.now();
+  while (Date.now() - start < waitSec * 1000) {
+    await new Promise((ok) => setTimeout(ok, 1000));
+    const row = await jobRow({ url, key, id });
+    if (!row) return null;
+    if (row.status === "done" && row.result) return { text: row.result, model: row.model || "구독" };
+    if (row.status === "failed") return null;
+    if (row.status === "pending" && Date.now() - start > pickSec * 1000) {
+      // 아무도 안 집어 감 → 취소(늦게 집어 가지 않게) 후 클로드 키로
+      if (await setJob({ url, key, id, patch: { status: "cancelled" }, onlyStatus: "pending" })) return null;
+    }
+  }
+  await setJob({ url, key, id, patch: { status: "cancelled" } });
+  return null;
+}
+
+export async function claimJob({ url, key, worker, rescueOnly }) {
+  const r = await fetch(`${url}/rest/v1/rpc/grade_claim`, {
+    method: "POST", headers: sbHeaders(key), body: JSON.stringify({ p_worker: worker, p_rescue_only: !!rescueOnly }),
+  });
+  if (!r.ok) return null;
+  const rows = await r.json();
+  return rows && rows[0] ? rows[0] : null;
 }

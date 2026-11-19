@@ -567,7 +567,7 @@ class App:
                     "x-device-id": cfg.get("device_id", "simulator"),
                 })
                 try:
-                    with urllib.request.urlopen(req, timeout=90) as resp:
+                    with urllib.request.urlopen(req, timeout=150) as resp:
                         body = resp.read().decode("utf-8", "replace").strip()
                 except urllib.error.HTTPError as e:
                     body = e.read().decode("utf-8", "replace").strip()
@@ -585,6 +585,24 @@ class App:
                     last = f"{name} {body}"
                     continue
                 return body, f"{name} 중계"
+        # 중계기에 닿지 않으면(인터넷 등) 이 컴퓨터의 구독 클로드로 직접 → 그래도 안 되면 클로드 키
+        try:
+            import importlib.util as _u
+            from importlib.machinery import SourceFileLoader as _L
+            _wp = str(HERE / "채점일꾼.pyw")
+            spec = _u.spec_from_file_location("worker", _wp, loader=_L("worker", _wp))
+            W = _u.module_from_spec(spec)
+            spec.loader.exec_module(W)
+            cl = W.find_claude()
+            if cl:
+                raw, ctype = prepare_file(path)
+                import base64 as _b
+                from relay_prompt import SYSTEM_TEXT
+                job = {"img_b64": _b.b64encode(raw).decode(), "media": ctype,
+                       "system": SYSTEM_TEXT, "model": "sonnet"}
+                return W.grade_with_subscription(cl, job), "이 컴퓨터 구독"
+        except Exception as e:
+            last = (last + " / " if last else "") + f"구독 직접 실패 {str(e)[:60]}"
         if os.environ.get("ANTHROPIC_API_KEY"):
             return G.grade(path, True), "이 컴퓨터 직접"
         raise RuntimeError(last or "채점 경로가 없습니다")

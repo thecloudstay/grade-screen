@@ -364,7 +364,7 @@ def build_pages(r, notes=False):
     if r.illegible:
         return [("msg", {"title": "판독 불가", "color": YELLOW,
                          "body": "사진이 흐리거나 기울었습니다. 다시 찍어 주세요."})]
-    pages = [("summary", r)]
+    pages = []   # 대표 결정(2026-11-19): 이름·점수·오답 수 요약 쪽 없이 첫 화면부터 정답 바둑판
 
     if notes:
         per, nsize, sizes = 3, 16, (18, 15)
