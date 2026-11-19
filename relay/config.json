@@ -21,12 +21,6 @@
     "claude-sonnet-5-5",
     "claude-opus-5-5"
   ],
-  "route": {
-    "first": "claude-haiku-5-5",
-    "escalate": "claude-sonnet-5-5",
-    "escalate_if": [
-      "어려움",
-      "낮음"
-    ]
-  }
+  "route": null,
+  "_메모": "2026-11-19 정확도 시험 187문항: 소넷 99%(평균 8.6초), 하이쿠 72~78%(4.2초), 자동 74%. 하이쿠가 틀려도 '확신 높음'이라 자동 전환이 작동하지 않아 소넷 고정."
 }
