@@ -153,6 +153,8 @@ def korean_error(exc):
         ("unsupported image", "jpg, png, webp 사진만 됩니다."),
         ("Pillow", "사진이 너무 큽니다."),
     ]
+    if re.search(r"[가-힣]", msg):
+        return msg[:80]
     for key, ko in table:
         if key in msg:
             return ko
@@ -320,6 +322,8 @@ class App:
             info += f"   ·   실제 화면의 약 {self.ratio:.1f}배 크기"
         if getattr(self, "src", ""):
             info += f"   ·   {self.src}"
+        if getattr(self, "via", ""):
+            info += f"   ·   {self.via}"
         info += f"   ·   {self.mod_state}"
         if self.usb_state:
             info += f"   ·   {self.usb_state}"
@@ -412,14 +416,61 @@ class App:
             path = self.jobs.get()
             self.q.put(("start", path.name, None))
             try:
-                import grade as G
-                text = G.grade(path, True)
+                text, via = self._grade_any(path)
+                self.via = via
                 RESULT_DIR.mkdir(parents=True, exist_ok=True)
                 out = RESULT_DIR / f"{time.strftime('%Y%m%d_%H%M%S')}_{path.stem}.txt"
                 out.write_text(text + "\n", encoding="utf-8")
                 self.q.put(("ok", text, out))
             except Exception as exc:
                 self.q.put(("err", korean_error(exc), None))
+
+    # ------------------------------------------------------------ 채점 경로
+    # 설정.json 의 중계 주소를 순서대로 시도 → 모두 실패하면 이 컴퓨터에서 직접(grade.py)
+    def _config(self):
+        import json as _j
+        try:
+            return _j.loads((HERE / "설정.json").read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def _grade_any(self, path):
+        import grade as G
+        import urllib.request
+        import urllib.error
+        cfg = self._config()
+        relays = cfg.get("relays") or []
+        last = ""
+        if relays:
+            raw = path.read_bytes()
+            try:
+                raw = G.shrink(raw)          # 장치와 같게 1600화소 사진으로 줄여 보냄
+            except Exception:
+                pass
+            for url in relays:
+                name = "슈퍼베이스" if "supabase" in url else "넷리파이" if "netlify" in url else "중계"
+                req = urllib.request.Request(url, data=raw, method="POST", headers={
+                    "content-type": "image/jpeg",
+                    "x-device-token": cfg.get("token", ""),
+                    "x-device-id": cfg.get("device_id", "simulator"),
+                })
+                try:
+                    with urllib.request.urlopen(req, timeout=90) as resp:
+                        body = resp.read().decode("utf-8", "replace").strip()
+                except urllib.error.HTTPError as e:
+                    body = e.read().decode("utf-8", "replace").strip()
+                    if e.code == 401:
+                        raise RuntimeError("장치 암호가 맞지 않습니다")
+                except Exception as e:
+                    last = f"{name} 연결 실패"
+                    continue
+                if body.startswith("오류"):
+                    last = f"{name} {body}"
+                    continue
+                return body, f"{name} 중계"
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            return G.grade(path, True), "이 컴퓨터 직접"
+        raise RuntimeError(last or "채점 경로가 없습니다")
 
     # ------------------------------------------------------------ 휴대폰 수신
     def _start_server(self):
