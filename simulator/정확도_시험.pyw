@@ -124,7 +124,7 @@ def prepare(path):
         return buf.getvalue(), "image/jpeg"
 
 
-MODELS = [("하이쿠", "claude-haiku-5-5"), ("소넷", "claude-sonnet-5-5"), ("자동", "")]
+MODELS = [("소넷", "claude-sonnet-5-5"), ("오퍼스", "claude-opus-5-5")]
 
 
 def send(cfg, raw, ctype, model=""):
@@ -228,7 +228,7 @@ class App:
             if kf.exists():
                 for fn, k in json.loads(kf.read_text(encoding="utf-8")).items():
                     keys[fn] = dict(k, _dir=str(d))
-        self.say(f"시험 답안지 {len(keys)}장 × 모델 {len(MODELS)}개(하이쿠·소넷·자동) — 동시에 4장씩 채점합니다(15~25분).\n")
+        self.say(f"시험 답안지 {len(keys)}장 × 모델 {len(MODELS)}개(소넷·오퍼스) — 동시에 4장씩 채점합니다(15~25분).\n")
 
         def one(job):
             fn, (mname, mid) = job
