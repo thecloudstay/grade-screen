@@ -21,6 +21,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -30,6 +32,9 @@ NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 EXT = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp",
        "image/gif": ".gif", "application/pdf": ".pdf"}
 LIMIT_WORDS = ("usage limit", "rate limit", "limit reached", "한도", "quota", "overloaded")
+AUTH_WORDS = ("login", "log in", "authentication", "unauthorized", "oauth", "credit balance")
+STATUS = Path.home() / "grade_results" / "채점_점검상태.txt"
+LAST_SYSTEM = Path.home() / "grade_results" / "채점_지시문_최신.txt"
 
 
 def log(msg):
@@ -113,6 +118,10 @@ def _run(args, data, cwd, timeout):
 def grade_with_subscription(claude, job):
     """빠른 길: 도구·확장·설정 없이 사진을 바로 넘긴다(읽기 도구 왕복이 없어 한 번에 끝남).
     실패하면 예전 길(읽기 도구로 파일 열기)로 한 번 더."""
+    try:   # 중계기에 닿지 않을 때 시뮬레이터가 쓸 최신 지시문 보관
+        LAST_SYSTEM.write_text(job["system"], encoding="utf-8")
+    except OSError:
+        pass
     q = queue_cfg()
     model = q.get("worker_model") or job.get("model") or "sonnet"
     effort = q.get("worker_effort", "medium")
@@ -151,6 +160,43 @@ def grade_with_subscription(claude, job):
         shutil.rmtree(work, ignore_errors=True)
 
 
+def status(state, detail=""):
+    try:
+        STATUS.write_text(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\t{state}\t{detail}\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def selftest_loop():
+    """전체 길 자가 점검: 시험 사진 한 장을 실제 중계기로 보내 「구독」 경로로 결과가 오는지 확인.
+    켤 때(1분 뒤) 한 번, 이후 6시간마다. 결과는 채점_점검상태.txt 와 기록에 남김."""
+    time.sleep(60)
+    while True:
+        try:
+            cfg = config()
+            sample = HERE / "시험샘플" / "01_기초수학.jpg"
+            if sample.exists():
+                url = relay_base(cfg)
+                req = urllib.request.Request(url, data=sample.read_bytes(), method="POST", headers={
+                    "content-type": "image/jpeg", "x-device-token": cfg.get("token", ""),
+                    "x-device-id": "selftest"})
+                t0 = time.time()
+                try:
+                    with urllib.request.urlopen(req, timeout=180) as r:
+                        body = r.read().decode("utf-8", "replace")
+                        route = urllib.parse.unquote(r.headers.get("x-grade-route", ""))
+                except urllib.error.HTTPError as e:
+                    body, route = e.read().decode("utf-8", "replace"), ""
+                sec = time.time() - t0
+                ok = "점수" in body and "구독" in route
+                status("정상" if ok else "이상", f"{sec:.0f}초 · 경로 {route or '-'} · {body.strip()[:80]}")
+                log(f"자가 점검 {'정상' if ok else '이상'} {sec:.0f}초 경로={route or '-'}")
+        except Exception as e:
+            status("이상", f"점검 실패: {str(e)[:100]}")
+            log(f"자가 점검 실패: {str(e)[:100]}")
+        time.sleep(6 * 3600)
+
+
 def main():
     if "--once" in sys.argv:   # 설치 확인용: 클로드가 있는지만 보고 끝
         print(find_claude() or "")
@@ -163,6 +209,8 @@ def main():
     except OSError:
         return
     log("시작")
+    import threading
+    threading.Thread(target=selftest_loop, daemon=True).start()
     fails, pause_until = 0, 0.0
     me = Path(__file__).resolve()
     born = me.stat().st_mtime
@@ -198,6 +246,9 @@ def main():
                 post(base + "/worker/result", token, {"id": job["id"], "ok": False, "error": msg}, timeout=20)
                 fails += 1
                 limited = any(w in msg.lower() for w in LIMIT_WORDS)
+                if any(w in msg.lower() for w in AUTH_WORDS):
+                    log("클로드 로그인 풀림 의심 → 채점일꾼_설치.pyw 를 다시 눌러 로그인 필요")
+                    status("로그인 필요", msg[:120])
                 log(f"채점 {job['id']} 실패({fails}회): {msg[:150]}")
                 if limited or fails >= 2:
                     pause_until = time.time() + 600

@@ -605,8 +605,10 @@ class App:
                 raw, ctype = prepare_file(path)
                 import base64 as _b
                 from relay_prompt import SYSTEM_TEXT
+                _last = Path.home() / "grade_results" / "채점_지시문_최신.txt"   # 일꾼이 받은 최신 지시문
+                sysmsg = _last.read_text(encoding="utf-8") if _last.exists() else SYSTEM_TEXT
                 job = {"img_b64": _b.b64encode(raw).decode(), "media": ctype,
-                       "system": SYSTEM_TEXT, "model": "sonnet"}
+                       "system": sysmsg, "model": "sonnet"}
                 return W.grade_with_subscription(cl, job), "이 컴퓨터 구독"
         except Exception as e:
             last = (last + " / " if last else "") + f"구독 직접 실패 {str(e)[:60]}"

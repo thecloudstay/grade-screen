@@ -30,8 +30,15 @@ async function workerNext(req: Request) {
   const config = await loadConfig();
   const q = config.queue || {};
   const until = Date.now() + 25_000;
+  // 살아 있음은 한 번만 적고(쓰기 줄이기), 사진은 1.5초마다 확인
+  await heartbeat({ url, key, worker, note: standby ? "standby" : null });
+  // 가끔(약 50번에 1번) 하루 지난 사진 원본 지우기 — 저장 공간 보호
+  if (Math.random() < 0.02) {
+    await fetch(`${url}/rest/v1/rpc/grade_jobs_cleanup`, {
+      method: "POST", headers: { apikey: key, Authorization: `Bearer ${key}`, "content-type": "application/json" }, body: "{}",
+    }).catch(() => {});
+  }
   while (Date.now() < until) {
-    await heartbeat({ url, key, worker, note: standby ? "standby" : null });
     const job = await claimJob({ url, key, worker, rescueOnly: standby });
     if (job) {
       return Response.json({
@@ -48,8 +55,8 @@ async function workerResult(req: Request) {
   const { url, key } = SB();
   const b = await req.json();
   const patch = b.ok
-    ? { status: "done", result: String(b.text || "").trim(), model: b.model || "구독", done_at: new Date().toISOString() }
-    : { status: "failed", error: String(b.error || "").slice(0, 300), done_at: new Date().toISOString() };
+    ? { status: "done", result: String(b.text || "").trim(), model: b.model || "구독", done_at: new Date().toISOString(), img_b64: null }
+    : { status: "failed", error: String(b.error || "").slice(0, 300), done_at: new Date().toISOString(), img_b64: null };
   // 이미 취소된(시간 넘어 클로드 키로 넘어간) 일은 덮어쓰지 않는다
   const n = await setJob({ url, key, id: b.id, patch, onlyStatus: "working" });
   return Response.json({ saved: n > 0 });
@@ -84,7 +91,7 @@ Deno.serve(async (req) => {
     let out: { text: string; model: string; route: string } | null = null;
 
     // 1) 구독형: 대표 컴퓨터 일꾼이 살아 있으면 대기열로 (시험용 모델 지정 요청은 바로 클로드 키로)
-    if (q.enabled !== false && !prefer && url && key && await workerAlive({ url, key, sec: q.alive_sec || 45 })) {
+    if (q.enabled !== false && !prefer && url && key && img.length < 12_000_000 && await workerAlive({ url, key, sec: q.alive_sec || 45 })) {
       const id = await enqueue({ url, key, img, media, device });
       const got = await waitJob({ url, key, id, pickSec: q.pick_sec || 15, waitSec: q.wait_sec || 80 });
       if (got) out = { ...got, route: "구독" };

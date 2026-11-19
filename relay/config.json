@@ -18,7 +18,7 @@
   "queue": {
     "enabled": true,
     "alive_sec": 45,
-    "pick_sec": 15,
+    "pick_sec": 40,
     "wait_sec": 125,
     "api_fallback": false,
     "worker_model": "sonnet",
