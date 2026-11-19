@@ -19,7 +19,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 RESULT_DIR = Path.home() / "grade_results"
-SAMPLES = HERE / "시험샘플"
+SAMPLE_DIRS = [HERE / "시험샘플", HERE / "시험샘플_고급"]
 
 import tkinter as tk  # noqa: E402
 
@@ -172,7 +172,12 @@ def check(fn, key, text):
         n_found += 1
         kind = "-" if it.blank else ("O" if it.ok else "X")
         ok_judge = kind == e["mark"]
-        ok_ans = same(it.answer, e["answer"], e.get("alts", []))
+        if e.get("kind") == "text":
+            low = re.sub(r"\s+", "", it.answer)
+            hits = sum(1 for w in e.get("keywords", []) if re.sub(r"\s+", "", w) in low)
+            ok_ans = hits >= max(1, e.get("need", 1))
+        else:
+            ok_ans = same(it.answer, e["answer"], e.get("alts", []))
         n_judge += ok_judge
         n_ans += ok_ans
         flag = "" if ok_judge and ok_ans else "   ← 틀림"
@@ -214,15 +219,20 @@ class App:
         except Exception:
             self.say("설정.json 이 없습니다.")
             return
-        keys = json.loads((SAMPLES / "key.json").read_text(encoding="utf-8"))
-        self.say(f"시험 답안지 {len(keys)}장 × 모델 {len(MODELS)}개(하이쿠·소넷·자동) — 동시에 3장씩 채점합니다.\n")
+        keys = {}
+        for d in SAMPLE_DIRS:
+            kf = d / "key.json"
+            if kf.exists():
+                for fn, k in json.loads(kf.read_text(encoding="utf-8")).items():
+                    keys[fn] = dict(k, _dir=str(d))
+        self.say(f"시험 답안지 {len(keys)}장 × 모델 {len(MODELS)}개(하이쿠·소넷·자동) — 동시에 4장씩 채점합니다(15~25분).\n")
 
         def one(job):
             fn, (mname, mid) = job
             k = keys[fn]
             t0 = time.time()
             try:
-                raw, ctype = prepare(SAMPLES / fn)
+                raw, ctype = prepare(Path(k["_dir"]) / fn)
                 text = send(cfg, raw, ctype, mid)
                 sec = time.time() - t0
                 (RESULT_DIR / "정확도_원문").mkdir(parents=True, exist_ok=True)
@@ -241,7 +251,7 @@ class App:
                 return dict(file=fn, error=str(e), sec=time.time() - t0, model=mname,
                             cond=k.get("condition", ""), title=k.get("title", ""))
 
-        with ThreadPoolExecutor(3) as ex:
+        with ThreadPoolExecutor(4) as ex:
             jobs = [(fn, m) for m in MODELS for fn in keys]
             results = list(ex.map(one, jobs))
 
@@ -272,6 +282,13 @@ class App:
                 if secs:
                     line += f" · 시간 평균 {sum(secs)/len(secs):.1f}초(최소 {min(secs):.1f}, 최대 {max(secs):.1f})"
                 summary.append(line)
+                by = {}
+                for r in [x for x in results if x.get("model") == mname and "error" not in x]:
+                    fld = r.get("title", "").split()[0]
+                    b = by.setdefault(fld, [0, 0, 0])
+                    b[0] += r["total"]; b[1] += r["judge"]; b[2] += r["ans"]
+                for fld, (t, j, a) in by.items():
+                    summary.append(f"    {fld}: 판정 {j}/{t} · 정답 {a}/{t}")
         rep.append("=" * 60)
         rep += summary
         out = RESULT_DIR / f"정확도보고_{time.strftime('%Y%m%d_%H%M%S')}.txt"
