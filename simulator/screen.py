@@ -20,14 +20,15 @@ PAD = 3
 
 # 색상(실제 화면은 RGB565 라서 마지막에 깎아 낸다)
 BG = (0, 0, 0)
-FG = (235, 235, 235)
-DIM = (130, 130, 130)
-HEAD_BG = (28, 31, 27)
-LINE = (60, 64, 58)
-RED = (235, 70, 60)
+# 화면 색은 흰색과 녹색 두 가지만: 녹색은 정답에만 쓰고 나머지는 모두 흰색
+FG = (255, 255, 255)
 GREEN = (70, 200, 100)
-YELLOW = (240, 190, 60)
-GRAY = (90, 90, 90)
+DIM = FG
+HEAD_BG = BG
+LINE = FG
+RED = FG
+YELLOW = FG
+GRAY = FG
 
 
 # ---------------------------------------------------------------- 글꼴
@@ -425,6 +426,7 @@ def build_pages(r, notes=False):
 # ---------------------------------------------------------------- 그리기
 def _head(d, title, color=FG, page=None):
     d.rectangle([0, 0, W - 1, ROW_H - 1], fill=HEAD_BG)
+    d.line([0, ROW_H - 1, W - 1, ROW_H - 1], fill=LINE)
     d.text((PAD, ROW_H / 2), title, font=font(12, True), fill=color, anchor="lm")
     if page:
         s = f"{page[0]}/{page[1]}"
@@ -483,9 +485,9 @@ def draw_list(d, data, page):
             d.text((ax - 1, m), "→", font=af, fill=DIM, anchor="rm")
             d.text((ax - 1 - tw("→", af), m), mine, font=af, fill=RED,
                    anchor="rm")
-        else:
-            d.text((W - PAD, m), right, font=font(size, True), fill=col,
-                   anchor="rm")
+        else:   # 미표기는 정답만 보이므로 녹색, 맞은 문항도 녹색
+            d.text((W - PAD, m), right, font=font(size, True),
+                   fill=GREEN if (it.blank or it.ok) else col, anchor="rm")
         if i < len(data["rows"]) - 1:
             d.line([PAD, y + h - 1, W - PAD, y + h - 1], fill=LINE)
 
