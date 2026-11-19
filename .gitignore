@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+simulator/설정.json
+supabase/functions/_shared/
+.netlify/

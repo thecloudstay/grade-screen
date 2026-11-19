@@ -1,0 +1,34 @@
+name: 예비 중계 배포(슈퍼베이스)
+on:
+  push:
+    branches: [main]
+    paths: ["relay/**", "supabase/**", ".github/workflows/deploy-supabase.yml"]
+  workflow_dispatch: {}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 비밀값 확인
+        id: chk
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$PROJECT_REF" ]; then
+            echo "비밀값이 아직 없어 배포를 건너뜁니다"; echo "skip=1" >> $GITHUB_OUTPUT
+          fi
+      - uses: supabase/setup-cli@v1
+        if: steps.chk.outputs.skip != '1'
+      - name: 공통 부분 복사
+        if: steps.chk.outputs.skip != '1'
+        run: mkdir -p supabase/functions/_shared && cp relay/core.mjs supabase/functions/_shared/core.mjs
+      - name: 함수 비밀값 설정
+        if: steps.chk.outputs.skip != '1'
+        run: |
+          supabase secrets set --project-ref "$PROJECT_REF" \
+            ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" \
+            DEVICE_TOKENS="${{ secrets.DEVICE_TOKENS }}"
+      - name: 함수 배포
+        if: steps.chk.outputs.skip != '1'
+        run: supabase functions deploy grade --project-ref "$PROJECT_REF" --no-verify-jwt
