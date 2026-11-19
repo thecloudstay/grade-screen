@@ -13,8 +13,9 @@
 //   토큰 → 구독형: 클로드 키 채점이 실패(충전금 소진·키 문제·연결 끊김)했는데 컴퓨터가 켜져 있으면
 //                  쉬는 중인 일꾼에게도 「되살림」으로 맡긴다
 //   POST /grade-relay/worker/result   채점일꾼: 결과 올리기
+//   POST /grade-relay/settings        대표 토글 읽기·바꾸기 {"api_fallback": true|false} (빈 몸이면 읽기만)
 import {
-  checkToken, claimJob, enqueue, gradeAuto, heartbeat, loadConfig, mediaOf, meta, record,
+  checkToken, claimJob, enqueue, gradeAuto, heartbeat, loadConfig, loadSettings, mediaOf, meta, record, saveSetting,
   setJob, SYSTEM, waitJob, workerAlive,
 } from "../_shared/core.mjs";
 
@@ -74,6 +75,13 @@ Deno.serve(async (req) => {
   try {
     if (path.endsWith("/worker/next")) return await workerNext(req);
     if (path.endsWith("/worker/result")) return await workerResult(req);
+    if (path.endsWith("/settings")) {
+      const { url, key } = SB();
+      const b = await req.json().catch(() => ({}));
+      const allowed = ["api_fallback"];
+      for (const k of allowed) if (k in b) await saveSetting({ url, key, name: k, value: !!b[k] });
+      return Response.json(await loadSettings({ url, key }));
+    }
   } catch (e) {
     return txt("오류: " + ((e as Error)?.message || "알 수 없음"), 502);
   }
@@ -87,7 +95,9 @@ Deno.serve(async (req) => {
   const { url, key } = SB();
   try {
     const config = await loadConfig();
-    const q = config.queue || {};
+    // 대표 토글이 설정 파일보다 우선(컴퓨터 꺼졌을 때 토큰 소모형으로 넘길지)
+    const sets = url && key ? await loadSettings({ url, key }) : {};
+    const q = { ...(config.queue || {}), ...("api_fallback" in sets ? { api_fallback: sets.api_fallback } : {}) };
     let out: { text: string; model: string; route: string } | null = null;
 
     // 1) 구독형: 대표 컴퓨터 일꾼이 살아 있으면 대기열로 (시험용 모델 지정 요청은 바로 클로드 키로)

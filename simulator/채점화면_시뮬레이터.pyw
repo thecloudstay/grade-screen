@@ -266,6 +266,7 @@ class App:
         self.watch = tk.BooleanVar(value=True)
         self.grid = tk.BooleanVar(value=True)
         self.merge_on = tk.BooleanVar(value=True)
+        self.fallback = tk.BooleanVar(value=False)   # 컴퓨터 꺼졌을 때 토큰 소모형(중계기 값으로 맞춤)
         self.pages = [("msg", {"title": "대기 중",
                                "body": "사진 채점 또는 결과 열기를 눌러 주세요."})]
         self.idx = 0
@@ -287,6 +288,7 @@ class App:
         self.ser = None
         self.ser_lock = threading.Lock()
         self._build()
+        self.load_fallback()
         self._load_newest(initial=True)
         self._tick()
 
@@ -314,6 +316,7 @@ class App:
         chk("새 결과 자동 표시", self.watch, lambda: None)
         chk("화소 격자", self.grid)
         chk("여러 장 합치기", self.merge_on, lambda: None)
+        chk("꺼지면 토큰", self.fallback, self.toggle_fallback)
         tk.Button(bar, text="새 학생", font=UI_FONT, relief="flat", bg="#24272b",
                   fg="#e8e8e8", activebackground="#33373c",
                   command=lambda: setattr(self, "batch", [])).pack(side="left", padx=4)
@@ -485,6 +488,42 @@ class App:
         self.idx = 0
         self.src = src
         self.redraw()
+
+    def _settings(self, body):
+        """중계기의 대표 토글 읽기·바꾸기. 실패하면 None."""
+        import json as _j
+        import urllib.request as _r
+        cfg = self._config()
+        url = next((u for u in cfg.get("relays", []) if "supabase" in u), "")
+        if not url:
+            return None
+        req = _r.Request(url.rstrip("/") + "/settings", data=_j.dumps(body).encode(), method="POST",
+                         headers={"content-type": "application/json", "x-device-token": cfg.get("token", ""),
+                                  "x-device-id": cfg.get("device_id", "simulator")})
+        try:
+            with _r.urlopen(req, timeout=15) as resp:
+                return _j.loads(resp.read().decode("utf-8"))
+        except Exception:
+            return None
+
+    def load_fallback(self):
+        def work():
+            got = self._settings({})
+            if got is not None:
+                self.root.after(0, lambda: self.fallback.set(bool(got.get("api_fallback"))))
+        threading.Thread(target=work, daemon=True).start()
+
+    def toggle_fallback(self):
+        want = self.fallback.get()
+
+        def work():
+            got = self._settings({"api_fallback": want})
+            ok = got is not None and bool(got.get("api_fallback")) == want
+            msg = ("컴퓨터 꺼지면 토큰 소모형으로 자동 전환: " + ("켬" if want else "끔")) if ok \
+                else "토글 저장 실패(중계기 배포 전일 수 있음)"
+            self.root.after(0, lambda: (self.fallback.set(want if ok else not want),
+                                        self.status.config(text=msg)))
+        threading.Thread(target=work, daemon=True).start()
 
     def toggle_notes(self):
         """해설 켜고 끄기: 다시 채점하지 않고 화면만 다시 짠다."""

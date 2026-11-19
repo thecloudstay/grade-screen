@@ -266,3 +266,25 @@ export async function claimJob({ url, key, worker, rescueOnly }) {
   const rows = await r.json();
   return rows && rows[0] ? rows[0] : null;
 }
+
+
+// ───────── 대표 토글(슈퍼베이스 grade_settings) ─────────
+let _set = null, _setAt = 0;
+export async function loadSettings({ url, key }) {
+  if (_set && Date.now() - _setAt < 10000) return _set;
+  try {
+    const r = await fetch(`${url}/rest/v1/grade_settings?select=key,value`, { headers: sbHeaders(key) });
+    if (r.ok) { _set = Object.fromEntries((await r.json()).map((x) => [x.key, x.value])); _setAt = Date.now(); }
+  } catch (_) { /* 못 읽으면 설정 파일 값 */ }
+  return _set || {};
+}
+
+export async function saveSetting({ url, key, name, value }) {
+  const r = await fetch(`${url}/rest/v1/grade_settings?on_conflict=key`, {
+    method: "POST",
+    headers: sbHeaders(key, { Prefer: "resolution=merge-duplicates,return=minimal" }),
+    body: JSON.stringify({ key: name, value, updated_at: new Date().toISOString() }),
+  });
+  _set = null;
+  return r.ok;
+}

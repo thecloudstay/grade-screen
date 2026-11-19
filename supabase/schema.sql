@@ -66,3 +66,14 @@ create or replace function public.grade_jobs_cleanup() returns void
 language sql security definer set search_path = public as $$
   delete from public.grade_jobs where created_at < now() - interval '1 day';
 $$;
+
+-- ───────── 채점 설정 토글 (2026-11-19) ─────────
+-- 대표가 시뮬레이터에서 켜고 끄는 값. 예: api_fallback = 컴퓨터가 꺼졌을 때 토큰 소모형으로 넘길지
+create table if not exists public.grade_settings (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.grade_settings enable row level security;
+insert into public.grade_settings(key, value) values ('api_fallback', 'false'::jsonb)
+  on conflict (key) do nothing;
