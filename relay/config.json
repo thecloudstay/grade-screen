@@ -20,8 +20,8 @@
     "alive_sec": 45,
     "pick_sec": 15,
     "wait_sec": 80,
-    "api_fallback": true,
+    "api_fallback": false,
     "worker_model": "sonnet",
-    "_메모": "대표 결정 2026-11-19: 기본 구독형(대표 컴퓨터 채점일꾼), 컴퓨터 꺼지면 클로드 키. api_fallback=false 로 바꾸면 토큰 소모 완전 차단"
+    "_메모": "2026-11-19 18:56 대표 지시 「빨리 멈춰」: 토큰 소모형 차단(api_fallback=false). 구독 채점일꾼이 켜진 뒤 다시 true 로 바꿀지 대표 결정"
   }
 }
